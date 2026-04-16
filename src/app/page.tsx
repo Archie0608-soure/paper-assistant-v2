@@ -1,0 +1,2718 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages } from 'lucide-react';
+import { exportToDocx } from '@/lib/docx';
+
+// 常见专业分类
+const MAJORS = [
+  '计算机科学', '软件工程', '人工智能', '数据科学',
+  '工商管理', '市场营销', '人力资源', '金融学', '经济学', '会计学',
+  '心理学', '教育学', '法学', '新闻传播', '英语', '汉语言文学',
+  '机械工程', '电子工程', '土木工程', '建筑学',
+  '医学', '护理学', '生物工程', '化学工程',
+  '物理学', '数学', '统计学', '环境科学',
+  '其他',
+];
+
+// 论文类型
+const PAPER_TYPES = [
+  { id: 'thesis', label: '毕业论文', desc: '本科毕业论文章节完整结构' },
+  { id: 'proposal', label: '开题报告', desc: '研究背景、意义、文献综述' },
+  { id: 'paper', label: '课程论文', desc: '期末课程论文或小论文' },
+];
+
+interface Chapter {
+  number: number;
+  title: string;
+  content: string;
+  written: boolean;
+  content_generated?: string;
+}
+
+interface Paper {
+  title: string;
+  authors: string[];
+  abstract: string;
+  year: number;
+  citations: number;
+  url: string;
+  source: string;
+  selected?: boolean;
+}
+
+export default function Home() {
+  const router = useRouter();
+  // ===== 登录状态 =====
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/check-session');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.loggedIn) {
+            setIsLoggedIn(true);
+            // 加载账户信息和签到信息
+            const [accountRes, signInRes] = await Promise.all([
+              fetch('/api/account'),
+              fetch('/api/sign-in'),
+            ]);
+            if (accountRes.ok) {
+              const accountData = await accountRes.json();
+              setAccountData(accountData);
+            }
+            if (signInRes.ok) {
+              const signInData = await signInRes.json();
+              setSignInInfo(signInData);
+            }
+          }
+        }
+      } catch {}
+    };
+    checkSession();
+  }, []);
+
+  // ===== 草稿自动保存 =====
+  const DRAFT_KEY = 'pepper_draft_v1';
+  
+  // 保存草稿到 localStorage
+  const saveDraft = () => {
+    try {
+      const draft = {
+        topic, interest, major, paperType,
+        outline, chapters, currentChapter, step,
+        selectedTopicTitle,
+        savedAt: Date.now()
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  };
+  
+  // 加载草稿
+  const loadDraft = () => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const draft = JSON.parse(saved);
+        // 检查草稿是否过期（24小时内）
+        if (Date.now() - draft.savedAt < 24 * 60 * 60 * 1000) {
+          return draft;
+        }
+      }
+    } catch {}
+    return null;
+  };
+  
+  // 初始化时加载草稿
+  useEffect(() => {
+    const draft = loadDraft();
+    if (draft && draft.outline) {
+      // 有草稿，提示用户是否恢复
+      if (confirm('发现未保存的草稿，是否恢复？')) {
+        setTopic(draft.topic || '');
+        setInterest(draft.interest || '');
+        setMajor(draft.major || '');
+        setPaperType(draft.paperType || 'thesis');
+        setOutline(draft.outline);
+        setChapters(draft.chapters || []);
+        setCurrentChapter(draft.currentChapter || null);
+        setStep(draft.step || 3);
+        setSelectedTopicTitle(draft.selectedTopicTitle || '');
+      } else {
+        localStorage.removeItem(DRAFT_KEY);
+      }
+    }
+  }, []);
+
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<string>('generate');
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', content: string}[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [accountData, setAccountData] = useState<any>(null);
+  const [signInInfo, setSignInInfo] = useState<{consecutive_days: number, last_sign_in: string | null, today_signed: boolean}>({consecutive_days: 0, last_sign_in: null, today_signed: false});
+  const [topupAmount, setTopupAmount] = useState<number>(0);
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [reduceLang, setReduceLang] = useState<'chinese' | 'english'>('chinese');
+  const [reducePlatform, setReducePlatform] = useState<string>('zhiwang');
+  const [reduceInput, setReduceInput] = useState('');
+  const [reduceOutput, setReduceOutput] = useState('');
+  const [reduceLoading, setReduceLoading] = useState(false);
+  const [reduceMode, setReduceMode] = useState<'plagiarism' | 'ai' | 'both'>('both');
+  const [reduceFileName, setReduceFileName] = useState('');
+  const [reduceFileSize, setReduceFileSize] = useState('');
+  const countWords = (t: string) => t ? t.replace(/\s/g, '').length : 0;
+
+  const [loginType, setLoginType] = useState<'phone' | 'email'>('email');
+  const [loginDest, setLoginDest] = useState('');
+  const [loginCode, setLoginCode] = useState('');
+  const [loginCodeSent, setLoginCodeSent] = useState(false);
+  const [loginPasswordMode, setLoginPasswordMode] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [pendingUser, setPendingUser] = useState<any>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+
+  // 生成模式: 人机协作 / 一键生成
+  const [generateMode, setGenerateMode] = useState<'collaborate' | 'oneclick'>('collaborate');
+
+  // 一键生成状态
+  const [oneClickTitle, setOneClickTitle] = useState('');
+  const [oneClickDegree, setOneClickDegree] = useState<'bachelor' | 'master' | 'doctoral'>('bachelor');
+  const [oneClickWords, setOneClickWords] = useState(8000);
+  const [oneClickMajor, setOneClickMajor] = useState('');
+  const [oneClickLoading, setOneClickLoading] = useState(false);
+  const [oneClickError, setOneClickError] = useState<string | null>(null);
+  const [oneClickSuccess, setOneClickSuccess] = useState(false);
+
+  // 一键生成时自动刷新论文历史进度
+  useEffect(() => {
+    if (!oneClickSuccess) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/papers/status');
+        const data = await res.json();
+        if (data.papers && data.papers.length > 0) {
+          // 合并到现有历史
+          setPaperHistory(prev => {
+            const generatingIds = new Set(data.papers.map((p: any) => p.id));
+            const others = prev.filter((p: any) => !generatingIds.has(p.id));
+            return [...data.papers, ...others];
+          });
+        }
+      } catch { /* ignore */ }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [oneClickSuccess]);
+
+  // 步骤状态: 1=选题, 2=搜索, 3=大纲, 4=写作
+  const [step, setStep] = useState(1);
+  
+  // Step 1: 基本信息
+  const [major, setMajor] = useState('');
+  const [paperType, setPaperType] = useState('thesis');
+  const [topic, setTopic] = useState('');
+  const [interest, setInterest] = useState('');
+  const [caseIndustry, setCaseIndustry] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  const [selectedTopicTitle, setSelectedTopicTitle] = useState<string>('');
+  
+  // Step 2: 文献搜索
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Paper[]>([]);
+  const [selectedPapers, setSelectedPapers] = useState<Paper[]>([]);
+  const [searching, setSearching] = useState(false);
+  
+  // Step 3: 大纲
+  const [outlineLoading, setOutlineLoading] = useState(false);
+  const [outline, setOutline] = useState<{ title: string; chapters: any[] } | null>(null);
+  
+  // Step 4: 写作模式
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [currentChapter, setCurrentChapter] = useState<number>(1);
+  const [chapterContent, setChapterContent] = useState('');
+  const [editingChapter, setEditingChapter] = useState<number | null>(null);
+  const [generatingChapter, setGeneratingChapter] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const [targetWordCount, setTargetWordCount] = useState<number>(1000);
+  const [keywordCount, setKeywordCount] = useState<number>(5);
+
+  // 根据章节类型自动设置目标字数
+  const autoSetWordCount = (chapterTitle: string) => {
+    const title = chapterTitle.toLowerCase();
+    if (title.includes('摘要') || title.includes('abstract')) {
+      setTargetWordCount(400);
+    } else if (title.includes('关键词') || title.includes('keyword')) {
+      setKeywordCount(5);
+    } else if (title.includes('引言') || title.includes('绪论') || title.includes('前言')) {
+      setTargetWordCount(1200);
+    } else if (title.includes('理论') || title.includes('概念') || title.includes('文献综述')) {
+      setTargetWordCount(1500);
+    } else if (title.includes('方法') || title.includes('研究设计')) {
+      setTargetWordCount(1500);
+    } else if (title.includes('问题') || title.includes('现状') || title.includes('分析')) {
+      setTargetWordCount(2000);
+    } else if (title.includes('模型') || title.includes('构建') || title.includes('设计')) {
+      setTargetWordCount(2500);
+    } else if (title.includes('实证') || title.includes('结果') || title.includes('案例')) {
+      setTargetWordCount(3000);
+    } else if (title.includes('结论') || title.includes('总结') || title.includes('展望')) {
+      setTargetWordCount(600);
+    } else if (title.includes('参考文献') || title.includes('致谢')) {
+      setTargetWordCount(500);
+    } else {
+      setTargetWordCount(1500);
+    }
+  };
+
+  const [showExportPreview, setShowExportPreview] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [paperHistory, setPaperHistory] = useState<any[]>([]);
+  const [currentPaperId, setCurrentPaperId] = useState<string | null>(null);
+
+  // 自动保存草稿（监听关键状态变化）
+  useEffect(() => {
+    if (outline || chapters.length > 0) {
+      saveDraft();
+    }
+  }, [outline, chapters, chapterContent, currentChapter, step]);
+
+  // ===== 登录函数 =====
+  const handleSendLoginCode = async () => {
+    if (!loginDest.trim()) { setLoginError('请输入手机号或邮箱'); return; }
+    setLoginLoading(true); setLoginError('');
+    try {
+      const res = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: loginType, destination: loginDest }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '发送失败');
+      setLoginCodeSent(true);
+    } catch (err: any) {
+      setLoginError(err.message || '发送失败，请稍后重试');
+    } finally { setLoginLoading(false); }
+  };
+
+  const handlePasswordLogin = async () => {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const res = await fetch('/api/auth/login-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginDest, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '登录失败');
+      setIsLoggedIn(true);
+      // 加载账户信息和签到信息
+      const [accountRes, signInRes] = await Promise.all([
+        fetch('/api/account'),
+        fetch('/api/sign-in'),
+      ]);
+      if (accountRes.ok) {
+        const accountData = await accountRes.json();
+        setAccountData(accountData);
+      }
+      if (signInRes.ok) {
+        const signInData = await signInRes.json();
+        setSignInInfo(signInData);
+      }
+    } catch (err: any) {
+      setLoginError(err.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleVerifyLoginCode = async () => {
+    if (!loginCode.trim()) { setLoginError('请输入验证码'); return; }
+    setLoginLoading(true); setLoginError('');
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: loginType, destination: loginDest, code: loginCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '验证失败');
+      if (data.isNewUser && !data.user?.hasPassword) {
+        // 新用户：先设置密码
+        setPendingUser(data.user);
+        setNeedsPassword(true);
+      } else {
+        setIsLoggedIn(true);
+        // 加载账户信息和签到信息
+        const [accountRes, signInRes] = await Promise.all([
+          fetch('/api/account'),
+          fetch('/api/sign-in'),
+        ]);
+        if (accountRes.ok) {
+          const accountData = await accountRes.json();
+          setAccountData(accountData);
+        }
+        if (signInRes.ok) {
+          const signInData = await signInRes.json();
+          setSignInInfo(signInData);
+        }
+      }
+    } catch (err: any) {
+      setLoginError(err.message || '验证失败');
+    } finally { setLoginLoading(false); }
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setIsLoggedIn(false);
+  };
+
+  const handleChatSend = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setChatLoading(true);
+    try {
+      const res = await fetch('/api/writing/deepseek', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: userMsg, action: 'chat' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setChatMessages(prev => [...prev, { role: 'ai', content: data.result }]);
+    } catch (err: any) {
+      setChatMessages(prev => [...prev, { role: 'ai', content: `抱歉：${err.message}` }]);
+    }
+    setChatLoading(false);
+  };
+
+  const handleSavePaper = async () => {
+    try {
+      const res = await fetch('/api/papers/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentPaperId,
+          title: outline?.title || topic || interest || '毕业论文',
+          major,
+          paperType,
+          outline,
+          chapters,
+          selectedPapers,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCurrentPaperId(data.id);
+      return data.id;
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      return null;
+    }
+  };
+
+  const handleLoadHistory = async () => {
+    try {
+      const res = await fetch('/api/papers/load');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPaperHistory(data.papers || []);
+      setShowHistory(true);
+    } catch (err: any) {
+      console.error('Load history failed:', err);
+    }
+  };
+
+  const handleLoadPaper = async (paperId: string) => {
+    try {
+      const res = await fetch('/api/papers/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: paperId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const p = data.paper;
+      if (!p) return;
+      setCurrentPaperId(p.id);
+      if (p.outline) setOutline(p.outline);
+      // 一键生成论文：chapters 是完整文本字符串，不是数组
+      if (p.chapters) {
+        if (typeof p.chapters === 'string') {
+          // chapters 是完整文本，用单个章节承载
+          const fullChapter = {
+            number: 1,
+            title: '全文',
+            content: p.chapters,
+            written: true,
+            content_generated: p.chapters,
+          };
+          setChapters([fullChapter as any]);
+        } else {
+          setChapters(p.chapters);
+        }
+      }
+      if (p.selected_papers) setSelectedPapers(p.selected_papers);
+      if (p.major) setMajor(p.major);
+      if (p.paper_type) setPaperType(p.paper_type);
+      if (p.title) setTopic(p.title);
+      setShowHistory(false);
+    } catch (err: any) {
+      console.error('Load paper failed:', err);
+    }
+  };
+
+  const handleOpenAccount = async () => {
+    try {
+      const [accountRes, signInRes] = await Promise.all([
+        fetch('/api/account'),
+        fetch('/api/sign-in')
+      ]);
+      const accountData = await accountRes.json();
+      const signInData = await signInRes.json();
+      if (accountRes.ok) setAccountData(accountData);
+      if (signInRes.ok) setSignInInfo(signInData);
+    } catch {}
+  };
+
+  const handleSetPassword = async (newPw: string) => {
+    try {
+      const res = await fetch('/api/auth/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setNeedsPassword(false);
+      setIsLoggedIn(true);
+    } catch (err: any) { alert(err.message || '设置失败'); }
+  };
+
+  const handleSignIn = async () => {
+    try {
+      const res = await fetch('/api/sign-in', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '签到失败');
+      
+      // 计算奖励
+      let bonus = 5;
+      if (data.consecutive_days === 3) bonus += 5;
+      if (data.consecutive_days === 7) bonus += 20;
+      
+      alert(`签到成功！获得 ${bonus} 金币\n已连续签到 ${data.consecutive_days} 天`);
+      
+      // 更新签到信息和余额
+      setSignInInfo({ ...signInInfo, consecutive_days: data.consecutive_days, last_sign_in: data.last_sign_in, today_signed: true });
+      if (accountData) setAccountData({ ...accountData, balance: accountData.balance + bonus });
+      
+      // 关闭菜单
+      setShowUserMenu(false);
+    } catch (err: any) {
+      alert(err.message || '签到失败，请稍后重试');
+    }
+  };
+
+  // ===== 未登录：显示登录页 =====
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-slate-50 to-slate-100 select-none">
+        {/* 密码设置弹窗 */}
+        {needsPassword && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Sparkles className="w-8 h-8 text-indigo-600" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">设置登录密码</h2>
+                <p className="text-sm text-slate-500 mt-2">请设置一个密码来保护您的账户</p>
+              </div>
+              <div className="space-y-4">
+                <input
+                  type="password"
+                  id="initPw"
+                  placeholder="输入密码（至少6位）"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
+                />
+                <input
+                  type="password"
+                  id="initPwConfirm"
+                  placeholder="再次输入密码"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
+                />
+                <button
+                  onClick={() => {
+                    const pw = (document.getElementById('initPw') as HTMLInputElement).value;
+                    const pw2 = (document.getElementById('initPwConfirm') as HTMLInputElement).value;
+                    if (pw.length < 6) { alert('密码至少6位'); return; }
+                    if (pw !== pw2) { alert('两次密码不一致'); return; }
+                    handleSetPassword(pw);
+                  }}
+                  className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition"
+                >设置密码并进入</button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 w-full max-w-md p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <BookOpen className="w-8 h-8 text-indigo-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">欢迎使用 Pepper</h1>
+            <p className="text-slate-500 mt-2">低AI率论文助手</p>
+          </div>
+
+          {loginError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">
+              {loginError}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">登录方式</label>
+              {/* Row 1: main choice - 手机 / 邮箱 */}
+              <div className="flex gap-3 mb-2">
+                <button
+                  disabled
+                  title="手机登录已关闭"
+                  className="flex-1 px-4 py-3 rounded-xl border-2 font-medium transition border-slate-200 text-slate-400 cursor-not-allowed"
+                >📱 手机登录（已关闭）</button>
+                <button
+                  onClick={() => { setLoginType('email'); setLoginCodeSent(false); setLoginDest(''); }}
+                  className={`flex-1 px-4 py-3 rounded-xl border-2 font-medium transition ${loginType === 'email' && !loginPasswordMode ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                >📧 邮箱登录</button>
+              </div>
+              {/* Row 2: secondary choice - 验证码 / 密码 */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setLoginPasswordMode(false); setLoginCodeSent(false); setLoginDest(''); }}
+                  className={`flex-1 px-3 py-2 rounded-xl border text-xs font-medium transition ${!loginPasswordMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}
+                >验证码登录</button>
+                <button
+                  onClick={() => { setLoginPasswordMode(true); setLoginCodeSent(false); setLoginDest(''); }}
+                  className={`flex-1 px-3 py-2 rounded-xl border text-xs font-medium transition ${loginPasswordMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}
+                >🔐 密码登录</button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                {loginType === 'phone' ? '手机号' : '邮箱地址'}
+              </label>
+              <input
+                type={loginType === 'phone' ? 'tel' : 'email'}
+                value={loginDest}
+                onChange={(e) => setLoginDest(e.target.value)}
+                placeholder={loginType === 'phone' ? '请输入手机号' : '请输入邮箱地址'}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+
+            {!loginPasswordMode && loginCodeSent && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">验证码</label>
+                <input
+                  type="text"
+                  value={loginCode}
+                  onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="请输入6位验证码"
+                  maxLength={6}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+            )}
+
+            {loginPasswordMode ? (
+          <div className="space-y-3">
+            <input
+              type="password"
+              placeholder="输入密码"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePasswordLogin()}
+              className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
+            />
+            <button
+              onClick={handlePasswordLogin}
+              disabled={loginLoading || !loginDest || !loginPassword}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-indigo-700 transition"
+            >
+              {loginLoading ? '登录中...' : '登录'}
+            </button>
+          </div>
+        ) : !loginCodeSent ? (
+              <button
+                onClick={handleSendLoginCode}
+                disabled={loginLoading}
+                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition disabled:opacity-50"
+              >
+                {loginLoading ? '发送中...' : '获取验证码'}
+              </button>
+            ) : (
+              <button
+                onClick={handleVerifyLoginCode}
+                disabled={loginLoading || loginCode.length < 6}
+                className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50"
+              >
+                {loginLoading ? '验证中...' : '登录'}
+              </button>
+            )}
+
+            {!loginPasswordMode && loginCodeSent && (
+              <button
+                onClick={() => { setLoginCodeSent(false); setLoginCode(''); }}
+                className="w-full py-2 text-sm text-slate-500 hover:text-slate-700"
+              >重新获取验证码</button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== 已登录：主应用 =====
+
+  // 生成选题
+  const handleGenerate = async () => {
+    if (!topic.trim() && !interest.trim()) {
+      setError('请输入论文主题或研究方向');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const res = await fetch('/api/generate-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          field: major,
+          paperType,
+          topic: topic || interest,
+          userTopic: topic ? true : false,
+          caseIndustry
+        }),
+      });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '未知错误');
+        throw new Error(`服务器错误 (${res.status})：${text.slice(0, 100)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || `生成失败 (${res.status})`);
+      }
+
+      setResult(data.topics);
+      setStep(2);
+      setSearchQuery(topic || interest);
+    } catch (err: any) {
+      setError(err.message || '出错了，请重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 一键生成
+  const handleOneClickGenerate = async () => {
+    if (!oneClickTitle.trim()) {
+      setOneClickError('请输入论文标题');
+      return;
+    }
+    setOneClickLoading(true);
+    setOneClickError(null);
+    setOneClickSuccess(false);
+
+    try {
+      const res = await fetch('/api/papers/one-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: oneClickTitle,
+          degree: oneClickDegree,
+          targetWords: oneClickWords,
+          major: oneClickMajor,
+        }),
+      });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '未知错误');
+        throw new Error(`服务器错误 (${res.status})：${text.slice(0, 100)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || `启动失败 (${res.status})`);
+      }
+
+      setOneClickSuccess(true);
+      setOneClickTitle('');
+      // 刷新论文历史
+      await handleLoadHistory();
+    } catch (err: any) {
+      setOneClickError(err.message || '启动失败');
+    } finally {
+      setOneClickLoading(false);
+    }
+  };
+
+  // 搜索文献 - 用 AI 生成学术化搜索词，再多引擎并行搜
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setSearching(true);
+    setError(null);
+    
+    try {
+      // 用 AI 生成 3 个不同的学术化搜索词
+      let searchQueries = [searchQuery];
+      try {
+        const genRes = await fetch('/api/generate-topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: 'expand-search',
+            topic: searchQuery
+          }),
+        });
+        const genData = await genRes.json();
+        if (genData.queries && Array.isArray(genData.queries)) {
+          searchQueries = [searchQuery, ...genData.queries.slice(0, 3)];
+        }
+      } catch {
+        // AI 生成失败就用原文
+      }
+      
+      // 三个引擎并行搜
+      const SEMANTIC_KEY = process.env.NEXT_PUBLIC_SEMANTIC_SCHOLAR_KEY || '';
+      const fetchPromises = searchQueries.flatMap((q: string) => [
+        fetch(`https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=8`, {
+          headers: { 'Accept': 'application/json' }
+        }),
+        fetch(`https://api.crossref.org/works?query=${encodeURIComponent(q)}&rows=8`, {
+          headers: { 'Accept': 'application/json' }
+        }),
+        fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(q)}&limit=8&fields=title,authors,abstract,year,citationCount,openAccessPdf`, {
+          headers: { 
+            'Accept': 'application/json',
+            ...(SEMANTIC_KEY ? { 'x-api-key': SEMANTIC_KEY } : {})
+          }
+        }),
+      ]);
+      
+      const results = await Promise.allSettled(fetchPromises);
+      
+      const allPapers: Paper[] = [];
+      
+      // 处理所有结果（每个查询的 OpenAlex + CrossRef + Semantic Scholar）
+      for (let i = 0; i < results.length; i += 3) {
+        const openalexResult = results[i];
+        const crossrefResult = results[i + 1];
+        const semanticResult = results[i + 2];
+        
+        // OpenAlex
+        if (openalexResult.status === 'fulfilled' && openalexResult.value.ok) {
+          try {
+            const data = await (openalexResult.value as Response).json();
+            const papers = (data.results || []).map((work: any) => ({
+              title: work.title,
+              authors: work.authorships?.slice(0, 5).map((a: any) => a.author.display_name) || [],
+              abstract: work.abstract_inverted_index ? '有摘要' : '无摘要',
+              year: work.publication_year,
+              citations: work.cited_by_count || 0,
+              url: work.doi || `https://openalex.org/works/${work.id}`,
+              source: 'OpenAlex' as string,
+            }));
+            allPapers.push(...papers);
+          } catch { /* ignore */ }
+        }
+        
+        // CrossRef
+        if (crossrefResult.status === 'fulfilled' && crossrefResult.value.ok) {
+          try {
+            const data = await (crossrefResult.value as Response).json();
+            const papers = (data.message?.items || []).map((work: any) => ({
+              title: work.title?.[0] || '无标题',
+              authors: work.author?.slice(0, 5).map((a: any) => a.given ? `${a.given} ${a.family}` : a.family) || [],
+              abstract: work.abstract ? work.abstract.slice(0, 200) + '...' : '无摘要',
+              year: work.published?.['date-parts']?.[0]?.[0] || work.created?.['date-parts']?.[0]?.[0] || 0,
+              citations: work['is-referenced-by-count'] || 0,
+              url: work.URL || work.DOI ? `https://doi.org/${work.DOI}` : '#',
+              source: 'CrossRef' as string,
+            }));
+            allPapers.push(...papers);
+          } catch { /* ignore */ }
+        }
+        
+        // Semantic Scholar
+        if (semanticResult.status === 'fulfilled' && semanticResult.value.ok) {
+          try {
+            const data = await (semanticResult.value as Response).json();
+            const papers = (data.data || []).map((work: any) => ({
+              title: work.title,
+              authors: work.authors?.slice(0, 5).map((a: any) => a.name) || [],
+              abstract: work.abstract ? work.abstract.slice(0, 200) + '...' : '无摘要',
+              year: work.year,
+              citations: work.citationCount || 0,
+              url: work.openAccessPdf?.url || `https://www.semanticscholar.org/paper/${work.paperId}`,
+              source: 'Semantic Scholar' as string,
+            }));
+            allPapers.push(...papers);
+          } catch { /* ignore */ }
+        }
+      }
+      
+      // 去重（按标题）
+      const seen = new Set<string>();
+      const unique = allPapers.filter((paper) => {
+        const key = paper.title.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      
+      // 按引用数排序
+      unique.sort((a, b) => (b.citations || 0) - (a.citations || 0));
+      const finalResults = unique.slice(0, 15);
+      
+      // AI 过滤掉不相关的论文
+      let filteredResults = finalResults;
+      try {
+        const filterRes = await fetch('/api/generate-topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: 'filter-papers',
+            topic: searchQuery,
+            papers: finalResults
+          }),
+        });
+        const filterData = await filterRes.json();
+        if (filterData.papers && filterData.papers.length > 0) {
+          filteredResults = filterData.papers;
+        }
+      } catch {
+        // 过滤失败就用原始结果
+      }
+      
+      // 翻译标题和摘要（英文转中文）
+      try {
+        const translateRes = await fetch('/api/generate-topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: 'translate-papers',
+            papers: filteredResults
+          }),
+        });
+        const translateData = await translateRes.json();
+        setSearchResults(translateData.papers || filteredResults);
+      } catch {
+        setSearchResults(filteredResults);
+      }
+    } catch (err: any) {
+      setError(err.message || '搜索失败');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // 删除章节
+  const handleDeleteChapter = (chapterNum: number) => {
+    if (!confirm(`确定删除第${chapterNum}章吗？`)) return;
+    setChapters(prev => prev.filter(c => c.number !== chapterNum).map((c, i) => ({ ...c, number: i + 1 })));
+    if (currentChapter >= chapterNum && currentChapter > 1) {
+      setCurrentChapter(currentChapter - 1);
+    }
+  };
+
+  // 切换选择文献
+  const togglePaper = (paper: Paper) => {
+    setSelectedPapers(prev => {
+      const exists = prev.find(p => p.title === paper.title);
+      if (exists) {
+        return prev.filter(p => p.title !== paper.title);
+      } else {
+        return [...prev, { ...paper, selected: true }];
+      }
+    });
+  };
+
+  // 生成大纲
+  const handleGenerateOutline = async () => {
+    setOutlineLoading(true);
+    
+    try {
+      const res = await fetch('/api/generate-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'generate-outline',
+          major,
+          topic: selectedTopicTitle || topic || interest,
+          paperType
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '生成大纲失败');
+      }
+
+      setOutline(data.outline);
+      const parsedChapters = (data.outline?.chapters || []).map((ch: any, i: number) => ({
+        ...ch,
+        written: false,
+        content_generated: '',
+      }));
+      setChapters(parsedChapters);
+      setStep(4);
+    } catch (err: any) {
+      setError(err.message || '生成大纲失败');
+    } finally {
+      setOutlineLoading(false);
+    }
+  };
+
+  // 生成章节内容
+  const handleGenerateChapter = async (chapterNum: number) => {
+    const chapter = chapters.find(c => c.number === chapterNum);
+    if (!chapter) return;
+
+    setCurrentChapter(chapterNum);
+    setEditingChapter(chapterNum);
+    setGeneratingChapter(true);
+
+    // 带超时控制的 fetch
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+    
+    try {
+      const res = await fetch('/api/generate-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'generate-chapter',
+          topic: outline?.title || topic,
+          chapterTitle: chapter.title,
+          chapterContent: chapter.content,
+          previousChapterSummary: chapters[chapterNum - 2]?.content_generated || '无',
+          targetWordCount: targetWordCount,
+          keywordCount: keywordCount
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '生成内容失败');
+      }
+
+      if (!data.content) {
+        throw new Error('生成内容为空，请重试');
+      }
+
+      setChapterContent(data.content);
+      
+      setChapters(prev => prev.map(c => 
+        c.number === chapterNum 
+          ? { ...c, content_generated: data.content, written: true }
+          : c
+      ));
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        setError('生成超时，请重试');
+      } else {
+        setError(err.message || '生成内容失败');
+      }
+    } finally {
+      setGeneratingChapter(false);
+    }
+  };
+
+  // 润色内容
+  const handlePolish = async () => {
+    if (!chapterContent) return;
+    
+    setPolishing(true);
+    
+    try {
+      const res = await fetch('/api/generate-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'polish',
+          text: chapterContent
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '润色失败');
+      }
+
+      setChapterContent(data.polished);
+    } catch (err: any) {
+      setError(err.message || '润色失败');
+    } finally {
+      setPolishing(false);
+    }
+  };
+
+  // 文件上传处理
+  const handleFileUpload = async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!['txt', 'docx'].includes(ext || '')) {
+      alert('仅支持 .txt 和 .docx 文件');
+      return;
+    }
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+    setReduceFileName(file.name);
+    setReduceFileSize(`${sizeMB} MB`);
+
+    try {
+      let text = '';
+      if (ext === 'txt') {
+        text = await file.text();
+      } else if (ext === 'docx') {
+        // 简单解析 docx（实际上是zip），提取 document.xml 文本
+        const { default: mammoth } = await import('mammoth');
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        text = result.value;
+      }
+      setReduceInput((prev) => prev ? prev + '\n\n' + text : text);
+    } catch (err) {
+      console.error('文件解析失败:', err);
+      alert('文件解析失败，请确保是有效的文本文件');
+    }
+  };
+
+  // 降重降AI处理
+  const handleReduce = async () => {
+    if (!reduceInput.trim()) return;
+    setReduceLoading(true);
+    setReduceOutput('');
+    try {
+      const res = await fetch('/api/ai/reduce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: reduceInput,
+          language: reduceLang,
+          platform: reducePlatform,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '处理失败');
+      setReduceOutput(data.result || data.text || '');
+    } catch (err: any) {
+      alert(err.message || '处理失败，请稍后重试');
+    } finally {
+      setReduceLoading(false);
+    }
+  };
+
+  // 保存章节
+  const handleSaveChapter = () => {
+    setChapters(prev => prev.map(c => 
+      c.number === currentChapter 
+        ? { ...c, content_generated: chapterContent, written: true }
+        : c
+    ));
+    setEditingChapter(null);
+    alert('章节已保存！');
+  };
+
+  // 导出排版
+  const handleExport = async (format: 'word' | 'pdf') => {
+    const writtenChapters = chapters.filter(c => c.written);
+    if (writtenChapters.length === 0) {
+      alert('请先完成至少一个章节的写作');
+      return;
+    }
+
+    if (format === 'pdf') {
+      alert('PDF 导出：请在 Word 中打开文档，使用「文件→另存为→PDF」');
+      return;
+    }
+
+    try {
+      // 先保存（触发扣费）
+      const saveRes = await fetch('/api/papers/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: outline?.title || topic || interest || '毕业论文',
+          major,
+          paperType: paperType || '毕业论文',
+          outline: outline,
+          chapters: writtenChapters,
+          selectedPapers: [],
+        }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) {
+        if (saveData.error === '余额不足，请先充值') {
+          alert('余额不足，请先充值后再导出');
+        } else {
+          alert(saveData.error || '保存失败，请重试');
+        }
+        return;
+      }
+
+      await exportToDocx(
+        outline?.title || topic || interest || '毕业论文',
+        major,
+        studentName,
+        writtenChapters
+      );
+    } catch (err: any) {
+      alert(err?.message || '导出失败，请稍后重试');
+    }
+  };
+
+  // 返回上一步
+  const goBack = () => {
+    if (step > 1) setStep(step - 1);
+  };
+
+  return (
+    <div className="min-h-screen select-none animate-aurora">
+      {/* 顶部 Header */}
+      <header className="bg-[#7c3aed] sticky top-0 z-50 shadow-md">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center overflow-hidden">
+                <img src={`https://api.dicebear.com/7.x/micah/svg?seed=Pepper`} alt="logo" className="w-full h-full" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">Pepper</h1>
+                <p className="text-white/70 text-xs">智能论文助手</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {step > 1 && (
+                <button 
+                  onClick={goBack}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  返回
+                </button>
+              )}
+              <button
+                onClick={handleLoadHistory}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition"
+              >
+                <BookOpen className="w-4 h-4" />
+                我的论文
+              </button>
+
+              {/* 用户头像菜单 */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="w-10 h-10 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center text-white font-medium shadow-lg hover:bg-white/30 transition-all overflow-hidden"
+                >
+                  <img 
+                    src={`https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(accountData?.email || accountData?.phone || 'user')}`} 
+                    alt="avatar" 
+                    className="w-full h-full"
+                  />
+                </button>
+
+                {/* 下拉菜单 */}
+                {showUserMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                    <div className="absolute right-0 top-12 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 overflow-hidden">
+                      <div className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-between">
+                        <div>
+                          <p className="text-white font-medium">{accountData?.email || accountData?.phone}</p>
+                          <p className="text-white/70 text-xs mt-0.5">{accountData?.balance || 0} 金币</p>
+                        </div>
+                        <button onClick={() => { setShowUserMenu(false); window.location.href = '/topup'; }}
+                          className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition">
+                          充值
+                        </button>
+                      </div>
+
+                      <div className="h-px bg-slate-100" />
+
+                      <button
+                        onClick={() => { setShowUserMenu(false); handleOpenAccount().then(() => setShowProfileModal(true)); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <User className="w-4 h-4 text-slate-400" />
+                        个人资料
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); window.location.href='/signin'; }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <Calendar className="w-4 h-4 text-slate-400" />
+                        每日签到
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); window.location.href='/transactions'; }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <Scale className="w-4 h-4 text-slate-400" />
+                        交易明细
+                      </button>
+                      <button onClick={() => router.push('/faq')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                        <HelpCircle className="w-4 h-4 text-slate-400" />
+                        常见问题
+                      </button>
+                      <button onClick={() => router.push('/kefu')}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                        <MessageCircle className="w-4 h-4 text-slate-400" />
+                        在线客服
+                      </button>
+                      <button onClick={() => router.push('/community')}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                        <Users className="w-4 h-4 text-slate-400" />
+                        专属社区
+                      </button>
+                      <button onClick={() => { setShowUserMenu(false); window.location.href='/review'; }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                        <Brain className="w-4 h-4 text-slate-400" />
+                        复习资料生成
+                      </button>
+                      <button onClick={() => router.push('/feedback')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                        <MessageSquare className="w-4 h-4 text-slate-400" />
+                        问题反馈
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); window.location.href = '/about'; }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <Info className="w-4 h-4 text-slate-400" />
+                        关于我们
+                      </button>
+
+                      <div className="h-px bg-slate-100" />
+
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        退出登录
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* 左侧功能栏 + 主内容 */}
+      {/* 移动端：功能栏横向贴顶 */}
+      <div className="md:hidden flex gap-3 overflow-x-auto pb-3 px-4 -mx-4">
+        <button
+          onClick={() => setActiveFeature('generate')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <FileText className="w-5 h-5" />
+          <span className="font-semibold">文章生成</span>
+        </button>
+        <button
+          onClick={() => setActiveFeature('agent')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Bot className="w-5 h-5" />
+          <span className="font-medium">科研智能体</span>
+        </button>
+        <button
+          onClick={() => router.push('/reduce')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Scale className="w-5 h-5" />
+          <span className="font-medium">降重降AI</span>
+        </button>
+        <button
+          onClick={() => router.push('/ppt')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Presentation className="w-5 h-5" />
+          <span className="font-medium">AI PPT</span>
+        </button>
+        <button
+          onClick={() => router.push('/translate')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Languages className="w-5 h-5" />
+          <span className="font-medium">论文翻译</span>
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto flex gap-6 py-6 px-6">
+        {/* 桌面端：左侧固定功能栏 */}
+        <aside className="hidden md:block w-52 flex-shrink-0 fixed left-6 top-1/2 -translate-y-1/2 z-30">
+          <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 overflow-hidden">
+            <button
+              onClick={() => setActiveFeature('generate')}
+              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <FileText className="w-6 h-6" />
+              <span className="font-semibold text-base">文章生成</span>
+            </button>
+            <button
+              onClick={() => setActiveFeature('agent')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Bot className="w-5 h-5" />
+              <span className="font-medium">科研智能体</span>
+            </button>
+            <button
+              onClick={() => router.push('/reduce')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Scale className="w-5 h-5" />
+              <span className="font-medium">降重降AI</span>
+            </button>
+            <button
+              onClick={() => router.push('/ppt')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Presentation className="w-5 h-5" />
+              <span className="font-medium">AI PPT</span>
+            </button>
+            <button
+              onClick={() => router.push('/review')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Brain className="w-5 h-5" />
+              <span className="font-medium">复习资料</span>
+            </button>
+            <button
+              onClick={() => router.push('/translate')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Languages className="w-5 h-5" />
+              <span className="font-medium">论文翻译</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* 主内容区 */}
+        <main className="flex-1 md:ml-64">
+        {/* 科研智能体聊天界面 */}
+        {activeFeature === 'agent' && (
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 h-[calc(100vh-200px)] flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                <Bot className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">科研智能体</h3>
+                <p className="text-xs text-slate-500">DeepSeek 模型驱动</p>
+              </div>
+            </div>
+
+            {/* 聊天消息区 */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {chatMessages.length === 0 && (
+                <div className="text-center text-slate-400 mt-20">
+                  <Bot className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>开始和科研智能体对话吧！</p>
+                </div>
+              )}
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  {msg.role === 'ai' && (
+                    <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-4 h-4 text-indigo-600" />
+                    </div>
+                  )}
+                  <div className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-900'}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div className="bg-slate-100 px-4 py-3 rounded-2xl">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}} />
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 输入框 */}
+            <div className="p-4 border-t border-slate-200">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
+                  placeholder="输入问题..."
+                  className="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  disabled={chatLoading}
+                />
+                <button
+                  onClick={handleChatSend}
+                  disabled={chatLoading || !chatInput.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition disabled:opacity-50"
+                >
+                  发送
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 步骤指示器 - 仅人机协作模式 */}
+        {activeFeature !== 'agent' && generateMode === 'collaborate' && (
+          <div className="flex justify-center mb-8">
+            <div className="flex items-center gap-2">
+              {['选题', '文献搜索', '大纲', '写作'].map((label, i) => (
+                <div key={i} className="flex items-center">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shadow-lg ${
+                    step > i + 1 ? 'bg-green-500 text-white' :
+                    step === i + 1 ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white' : 'bg-white text-slate-400 border-2 border-slate-200'
+                  }`}>
+                    {step > i + 1 ? <Check className="w-5 h-5" /> : i + 1}
+                  </div>
+                  <span className={`ml-3 text-base font-medium ${step === i + 1 ? 'text-indigo-700' : 'text-slate-400'}`}>
+                    {label}
+                  </span>
+                  {i < 3 && <div className={`w-12 h-1 mx-3 rounded-full ${step > i + 1 ? 'bg-green-500' : 'bg-slate-200'}`} />}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 模式切换 */}
+        {activeFeature !== 'agent' && (
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setGenerateMode('collaborate')}
+                className={`px-6 py-3 rounded-lg text-sm font-medium transition-all ${
+                  generateMode === 'collaborate'
+                    ? 'bg-white text-indigo-700 shadow-md'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                🤝 人机协作
+              </button>
+              <button
+                onClick={() => setGenerateMode('oneclick')}
+                className={`px-6 py-3 rounded-lg text-sm font-medium transition-all ${
+                  generateMode !== 'collaborate'
+                    ? 'bg-white text-indigo-700 shadow-md'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                ⚡ 一键生成
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: 输入论文信息 */}
+        {step === 1 && activeFeature !== 'agent' && (
+          <div className="space-y-8">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">输入你的论文主题</h2>
+              <p className="text-slate-600">告诉我们你的专业和研究方向，AI帮你细化选题</p>
+            </div>
+
+            {/* 人机协作模式 */}
+            {generateMode === 'collaborate' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+              <div className="space-y-6">
+                {/* 论文类型 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">论文类型</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {PAPER_TYPES.map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => setPaperType(type.id)}
+                        className={`p-4 rounded-xl border-2 text-left transition ${
+                          paperType === type.id
+                            ? 'border-indigo-600 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="font-medium text-slate-900">{type.label}</div>
+                        <div className="text-sm text-slate-500">{type.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 专业选择 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    专业方向 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={major}
+                    onChange={(e) => setMajor(e.target.value)}
+                    placeholder="输入你的专业方向"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+
+                {/* 案例行业 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    案例行业（选填）
+                  </label>
+                  <input
+                    type="text"
+                    value={caseIndustry}
+                    onChange={(e) => setCaseIndustry(e.target.value)}
+                    placeholder="例如：医疗、教育、金融"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">指定案例所属行业，生成的论文将以该行业为例展开分析</p>
+                </div>
+
+                {/* 论文主题 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    论文主题（如果有的话）
+                  </label>
+                  <input
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="例如：基于深度学习的图像去雾算法研究"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+
+                {/* 研究方向 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    感兴趣的研究方向（可选）
+                  </label>
+                  <input
+                    type="text"
+                    value={interest}
+                    onChange={(e) => setInterest(e.target.value)}
+                    placeholder="例如：人工智能在医疗诊断中的应用"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleGenerate}
+                  disabled={loading}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 text-lg"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      正在生成选题方向...
+                    </>
+                  ) : (
+                    <>
+                      <Lightbulb className="w-5 h-5" />
+                      {topic ? '基于主题生成建议' : '根据研究方向生成选题'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+            )}
+
+            {/* 一键生成模式 */}
+            {(generateMode as string) === 'oneclick' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+              <div className="space-y-6">
+                {/* 标题 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    论文标题 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={oneClickTitle}
+                    onChange={(e) => setOneClickTitle(e.target.value)}
+                    placeholder="例如：基于深度学习的图像去雾算法研究"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+
+                {/* 学历 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">学历层次</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { id: 'bachelor', label: '本科', desc: '8000-15000字' },
+                      { id: 'master', label: '硕士', desc: '15000-30000字' },
+                      { id: 'doctoral', label: '博士', desc: '30000字以上' },
+                    ].map((deg) => (
+                      <button
+                        key={deg.id}
+                        onClick={() => setOneClickDegree(deg.id as any)}
+                        className={`p-4 rounded-xl border-2 text-left transition ${
+                          oneClickDegree === deg.id
+                            ? 'border-indigo-600 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="font-semibold text-slate-900">{deg.label}</div>
+                        <div className="text-xs text-slate-500">{deg.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 自定义字数 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    目标字数：<span className="text-indigo-600 font-bold">{oneClickWords.toLocaleString()}</span> 字
+                  </label>
+                  <input
+                    type="range"
+                    min="3000"
+                    max="50000"
+                    step="1000"
+                    value={oneClickWords}
+                    onChange={(e) => setOneClickWords(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>3000字</span><span>50000字</span>
+                  </div>
+                </div>
+
+                {/* 专业（选填） */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">专业（选填）</label>
+                  <input
+                    type="text"
+                    value={oneClickMajor}
+                    onChange={(e) => setOneClickMajor(e.target.value)}
+                    placeholder="例如：计算机科学"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+
+                {oneClickError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    {oneClickError}
+                  </div>
+                )}
+
+                {oneClickSuccess && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                    ✅ 论文已加入生成队列！去「我的论文」查看进度
+                  </div>
+                )}
+
+                <button
+                  onClick={handleOneClickGenerate}
+                  disabled={oneClickLoading}
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {oneClickLoading ? (
+                    <><Loader2 className="w-5 h-5 animate-spin" /> 生成中...</>
+                  ) : (
+                    <><Sparkles className="w-5 h-5" /> 一键生成完整论文</>
+                  )}
+                </button>
+                <p className="text-xs text-slate-400 text-center">消耗 10 金币，后台生成无需等待</p>
+              </div>
+            </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: 选择选题 & 文献搜索 */}
+        {step === 2 && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">选择你的研究方向</h2>
+              <p className="text-slate-600">点击选择一个，并搜索相关文献</p>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">AI 推荐的 {major} 论文选题：</h3>
+              
+              <TopicCards 
+                result={result} 
+                onSelect={(idx, topicTitle) => { 
+                  setSelectedTopic(idx); 
+                  setSelectedTopicTitle(topicTitle || ''); 
+                }} 
+                selectedTopic={selectedTopic} 
+              />
+              
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  文献搜索关键词（基于你的选题自动填充）
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="输入搜索关键词..."
+                    className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={searching || !searchQuery.trim()}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
+                  >
+                    {searching ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
+                    搜索文献
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  {error}
+                </div>
+              )}
+
+              {/* 搜索结果 */}
+              {searchResults.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="font-medium text-slate-900 mb-3">搜索到 {searchResults.length} 篇相关文献（点击选择）：</h4>
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {searchResults.map((paper, i) => (
+                      <div 
+                        key={i}
+                        onClick={() => togglePaper(paper)}
+                        className={`p-4 rounded-xl border-2 cursor-pointer transition ${
+                          selectedPapers.find(p => p.title === paper.title)
+                            ? 'border-indigo-600 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <h5 className="font-medium text-slate-900">{paper.title}</h5>
+                            <p className="text-sm text-slate-600 mt-1">
+                              {paper.authors.join(', ')} · {paper.year} · 引用: {paper.citations}
+                            </p>
+                            <p className="text-sm text-slate-500 mt-2 line-clamp-2">{paper.abstract}</p>
+                            <p className="text-xs text-slate-400 mt-2">来源: {paper.source}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <a 
+                              href={paper.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-2 text-slate-400 hover:text-indigo-600"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                            {selectedPapers.find(p => p.title === paper.title) && (
+                              <Star className="w-5 h-5 text-indigo-600 fill-indigo-600" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm text-slate-500 mt-3">
+                    已选择 {selectedPapers.length} 篇文献，将在写作时参考
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-6 flex gap-4">
+                <button 
+                  onClick={() => { setStep(1); setResult(null); setSelectedTopic(null); setSelectedTopicTitle(''); }}
+                  className="flex-1 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition"
+                >
+                  重新生成
+                </button>
+                <button 
+                  onClick={handleGenerateOutline}
+                  disabled={selectedTopic === null || outlineLoading}
+                  className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {outlineLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      生成大纲中...
+                    </>
+                  ) : (
+                    <>
+                      {selectedTopic ? `选择第${selectedTopic}个，生成大纲` : '选择选题'}
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: 大纲生成中 */}
+        {step === 3 && outlineLoading && (
+          <div className="text-center py-12">
+            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">正在生成论文大纲...</h3>
+            <p className="text-slate-600">AI 正在根据你的选题构建完整的论文结构</p>
+          </div>
+        )}
+
+        {/* Step 4: 写作模式 */}
+        {step === 4 && outline && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">{outline.title}</h2>
+              <p className="text-slate-600">共 {chapters.length} 个章节 · 点击章节开始写作</p>
+            </div>
+
+            {/* 选中的文献 */}
+            {selectedPapers.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <h4 className="font-medium text-blue-900 mb-2">已参考的文献：</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedPapers.map((paper, i) => (
+                    <span key={i} className="px-3 py-1 bg-white rounded-full text-sm text-blue-700 border border-blue-200">
+                      {paper.title.slice(0, 30)}...
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 大纲概览 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <Layout className="w-5 h-5 text-indigo-600" />
+                论文大纲
+              </h3>
+              <div className="space-y-3">
+                {chapters.map((chapter) => (
+                  <div 
+                    key={chapter.number}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition ${
+                      currentChapter === chapter.number 
+                        ? 'border-indigo-600 bg-indigo-50' 
+                        : chapter.written 
+                          ? 'border-green-500 bg-green-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                    onClick={() => {
+                      setCurrentChapter(chapter.number);
+                      setChapterContent(chapter.content_generated || '');
+                      setEditingChapter(chapter.number);
+                      autoSetWordCount(chapter.title);
+                    }}
+                    onDoubleClick={() => {
+                      setCurrentChapter(chapter.number);
+                      setChapterContent(chapter.content_generated || '');
+                      autoSetWordCount(chapter.title);
+                      setEditingChapter(chapter.number);
+                      document.getElementById('chapter-writing-area')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    title="双击直接跳转到写作区域"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                          currentChapter === chapter.number 
+                            ? 'bg-indigo-600 text-white' 
+                            : chapter.written 
+                              ? 'bg-green-500 text-white'
+                              : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {chapter.written ? <Check className="w-4 h-4" /> : chapter.number}
+                        </span>
+                        <span className="font-medium text-slate-900">{chapter.title}</span>
+                      </div>
+                      {chapter.written && (
+                        <span className="text-sm text-green-600">已完成</span>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteChapter(chapter.number); }}
+                        className="text-slate-400 hover:text-red-500 transition p-1"
+                        title="删除章节"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500 ml-11">{chapter.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 章节编辑区 */}
+            {editingChapter && (
+              <div id="chapter-writing-area" className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-slate-900">
+                    第{currentChapter}章：{chapters.find(c => c.number === currentChapter)?.title}
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    {chapters.find(c => c.number === currentChapter)?.title.toLowerCase().includes('关键词') || chapters.find(c => c.number === currentChapter)?.title.toLowerCase().includes('keyword')
+                      ? (
+                        <>
+                          <span className="text-sm text-slate-500">关键词数量：</span>
+                          <select
+                            value={keywordCount}
+                            onChange={(e) => setKeywordCount(Number(e.target.value))}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          >
+                            <option value={3}>3个</option>
+                            <option value={4}>4个</option>
+                            <option value={5}>5个</option>
+                            <option value={6}>6个</option>
+                            <option value={8}>8个</option>
+                          </select>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm text-slate-500">目标字数：</span>
+                          <select
+                            value={targetWordCount}
+                            onChange={(e) => setTargetWordCount(Number(e.target.value))}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          >
+                            <option value={300}>300字（摘要）</option>
+                            <option value={500}>500字（摘要/引言）</option>
+                            <option value={1000}>1000字（理论基础）</option>
+                            <option value={1500}>1500字（引言/理论）</option>
+                            <option value={2000}>2000字（问题分析）</option>
+                            <option value={2500}>2500字（模型构建）</option>
+                            <option value={3000}>3000字（实证分析）</option>
+                            <option value={5000}>5000字（核心章节）</option>
+                          </select>
+                        </>
+                      )
+                    }
+                  </div>
+                </div>
+                <div className="flex gap-2 mb-4">
+                    <button
+                      onClick={() => {
+                        if (chapterContent && confirm('确定要清空现有内容重新生成吗？')) {
+                          setChapterContent('');
+                          handleGenerateChapter(currentChapter);
+                        } else if (!chapterContent) {
+                          handleGenerateChapter(currentChapter);
+                        }
+                      }}
+                      disabled={generatingChapter}
+                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {generatingChapter ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                      {generatingChapter ? '生成中...' : 'AI生成全文'}
+                    </button>
+                    <button
+                      onClick={handlePolish}
+                      disabled={!chapterContent || polishing}
+                      className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 transition disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {polishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      润色降AI率
+                    </button>
+                    <button
+                      onClick={() => handleGenerateChapter(currentChapter)}
+                      disabled={generatingChapter}
+                      className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium hover:bg-indigo-200 transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {generatingChapter ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
+                      {generatingChapter ? '生成中...' : 'AI续写'}
+                    </button>
+                    <button
+                      onClick={handleSaveChapter}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition flex items-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      保存章节
+                    </button>
+                </div>
+                
+                <div className={`relative ${generatingChapter ? 'select-none' : ''}`}>
+                  <textarea
+                    value={chapterContent}
+                    onChange={(e) => setChapterContent(e.target.value)}
+                    className={`w-full h-96 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition resize-none ${generatingChapter ? 'cursor-not-allowed select-none' : ''}`}
+                    placeholder="在此输入或编辑章节内容... 点击「AI续写」让AI帮你生成内容"
+                    disabled={generatingChapter}
+                    onContextMenu={generatingChapter ? (e) => e.preventDefault() : undefined}
+                    onCopy={generatingChapter ? (e) => e.preventDefault() : undefined}
+                    onSelect={generatingChapter ? (e) => e.preventDefault() : undefined}
+                  />
+                  {generatingChapter && (
+                    <div className="absolute inset-0 bg-white/70 rounded-lg flex flex-col items-center justify-center">
+                      <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-2" />
+                      <p className="text-slate-600">AI 正在撰写章节内容...</p>
+                      <p className="text-sm text-slate-400 mt-1">预计需要 1-2 分钟</p>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="mt-4 flex justify-between items-center">
+                  <div className="flex gap-2">
+                    {currentChapter > 1 && (
+                      <button
+                        onClick={() => {
+                          setCurrentChapter(currentChapter - 1);
+                          const prev = chapters.find(c => c.number === currentChapter - 1);
+                          setChapterContent(prev?.content_generated || '');
+                          setEditingChapter(prev?.written ? currentChapter - 1 : null);
+                        }}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition"
+                      >
+                        上一章
+                      </button>
+                    )}
+                    {currentChapter < chapters.length && (
+                      <button
+                        onClick={() => {
+                          setCurrentChapter(currentChapter + 1);
+                          const next = chapters.find(c => c.number === currentChapter + 1);
+                          setChapterContent(next?.content_generated || '');
+                          setEditingChapter(next?.written ? currentChapter + 1 : null);
+                        }}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition"
+                      >
+                        下一章
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-sm text-slate-500">
+                    {chapterContent.length} 字
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 完成提示 - 排版导出 */}
+            {chapters.every(c => c.written) && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-8">
+                <div className="text-center mb-6">
+                  <Check className="w-12 h-12 text-green-500 mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-green-900 mb-2">恭喜！论文初稿已完成！</h3>
+                  <p className="text-green-700">所有章节已撰写完成，AI已排版好格式。</p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 space-y-4 max-w-md mx-auto">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">学生姓名</label>
+                    <input
+                      type="text"
+                      value={studentName}
+                      onChange={(e) => setStudentName(e.target.value)}
+                      placeholder="输入你的姓名，会自动填入文档"
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-green-500 outline-none transition"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">选择导出格式</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => handleExport('word')}
+                        className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition"
+                      >
+                        <FileDown className="w-8 h-8 text-indigo-600" />
+                        <span className="text-sm font-medium text-indigo-700">Word 文档</span>
+                        <span className="text-xs text-indigo-500">.docx 可编辑</span>
+                      </button>
+                      <button
+                        onClick={() => handleExport('pdf')}
+                        className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-300 bg-white transition"
+                      >
+                        <FileDown className="w-8 h-8 text-slate-600" />
+                        <span className="text-sm font-medium text-slate-700">PDF 文件</span>
+                        <span className="text-xs text-slate-400">.pdf 正式提交用</span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => setShowExportPreview(true)}
+                    className="w-full px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition flex items-center justify-center gap-2"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    预览文档内容
+                  </button>
+                  
+                  <p className="text-xs text-slate-400 text-center">
+                    文档已按学术论文格式排版，包含封面、声明、目录、章节内容、参考文献等
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+      </div>
+
+      {/* 导出预览弹窗 */}
+      {showExportPreview && (() => {
+        const written = chapters.filter(c => c.written && c.content_generated);
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowExportPreview(false)}>
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900">📄 文档预览</h2>
+                <button onClick={() => setShowExportPreview(false)} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+              </div>
+              <div className="p-6 space-y-6">
+                {/* 封面预览 */}
+                <div className="text-center space-y-2 bg-slate-50 rounded-xl p-6">
+                  <p className="text-2xl font-bold text-slate-900">{outline?.title || topic || interest || '毕业论文'}</p>
+                  <p className="text-sm text-slate-500">专业：{major || '___________'}</p>
+                  <p className="text-sm text-slate-500">姓名：{studentName || '___________'}</p>
+                  <p className="text-sm text-slate-500">指导教师：___________</p>
+                  <p className="text-xs text-slate-400 mt-4">封面</p>
+                </div>
+
+                {/* 声明页 */}
+                <div className="border-t border-dashed border-slate-200 pt-4">
+                  <p className="text-sm text-slate-400 mb-2">声明页</p>
+                  <p className="text-sm text-slate-600">本论文是我在导师指导下进行的研究工作及取得的研究成果...</p>
+                </div>
+
+                {/* 摘要 */}
+                <div className="border-t border-dashed border-slate-200 pt-4">
+                  <p className="text-sm text-slate-400 mb-2">摘要 & 关键词</p>
+                  <p className="text-sm text-slate-400 italic">[请在此填写中文摘要]</p>
+                </div>
+
+                {/* 目录 */}
+                <div className="border-t border-dashed border-slate-200 pt-4">
+                  <p className="text-sm text-slate-400 mb-2">目    录</p>
+                  {written.map(ch => (
+                    <p key={ch.number} className="text-sm text-slate-700">
+                      {ch.number > 1 ? `第${['零','一','二','三','四','五','六','七','八','九','十'][ch.number]}章 ` : ''}{ch.title}
+                    </p>
+                  ))}
+                  <p className="text-sm text-slate-700">参考文献</p>
+                  <p className="text-sm text-slate-700">致    谢</p>
+                </div>
+
+                {/* 章节内容预览 */}
+                {written.map(ch => (
+                  <div key={ch.number} className="border-t border-dashed border-slate-200 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-800">
+                        {ch.number > 1 ? `第${['零','一','二','三','四','五','六','七','八','九','十'][ch.number]}章 ` : ''}{ch.title}
+                      </p>
+                      <span className="text-xs text-green-600">✓ {ch.content_generated?.length || 0} 字</span>
+                    </div>
+                    <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">
+                      {ch.content_generated?.slice(0, 200)}...
+                    </p>
+                  </div>
+                ))}
+
+                {/* 底部 */}
+                <div className="border-t border-dashed border-slate-200 pt-4 space-y-2">
+                  <p className="text-sm text-slate-400">参考文献 & 致谢占位</p>
+                  <p className="text-xs text-slate-400">* 参考文献请在 Word 中手动添加，按 GB/T 7714 格式</p>
+                </div>
+              </div>
+              <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4 flex gap-3">
+                <button
+                  onClick={() => setShowExportPreview(false)}
+                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition"
+                >
+                  关闭预览
+                </button>
+                <button
+                  onClick={() => { setShowExportPreview(false); handleExport('word'); }}
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+                >
+                  <FileDown className="w-4 h-4" />
+                  下载 Word
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+    {/* 个人资料弹窗 */}
+    {showProfileModal && (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl">
+          <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-8 pb-20">
+            <button 
+              onClick={() => setShowProfileModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-white/30 backdrop-blur rounded-full flex items-center justify-center mb-4 overflow-hidden">
+                <img 
+                  src={`https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(accountData?.email || accountData?.phone || 'user')}`} 
+                  alt="avatar" 
+                  className="w-full h-full"
+                />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-1">
+                {accountData?.name || accountData?.email?.split('@')[0] || accountData?.phone?.slice(-4) || '新用户'}
+              </h2>
+              <p className="text-white/80 text-sm">{accountData?.email ? '📧 邮箱账号' : '📱 手机账号'}</p>
+            </div>
+          </div>
+
+          <div className="bg-white -mt-8 rounded-t-2xl p-6 space-y-4">
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-5 border border-amber-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-amber-600 mb-1">账户余额</p>
+                  <p className="text-2xl font-bold text-amber-700">
+                    {accountData?.balance !== undefined && accountData?.balance !== null ? accountData.balance : '—'} 
+                    <span className="text-sm font-normal">金币</span>
+                  </p>
+                  <p className="text-xs text-amber-500 mt-1">1元 = 10金币 · 千字100金币</p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                    <span className="text-xl">💰</span>
+                  </div>
+                  <button onClick={() => window.location.href = '/topup'} className="px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-medium rounded-lg shadow hover:shadow-lg transition">
+                    充值
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 签到卡片 */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-5 border border-green-100">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📅</span>
+                  <span className="font-medium text-green-700">每日签到</span>
+                </div>
+                <div className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                  连续{signInInfo.consecutive_days}天
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-green-600 mb-3">
+                <span>签到规则：每日5金币</span>
+                <span className="text-green-400">|</span>
+                <span>连续3天+5金币</span>
+                <span className="text-green-400">|</span>
+                <span>连续7天+20金币</span>
+              </div>
+              <button
+                onClick={async () => {
+                  if (signInInfo.today_signed) {
+                    alert('今日已签到，明天再来吧！');
+                    return;
+                  }
+                  try {
+                    const res = await fetch('/api/sign-in', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error);
+                    alert(data.message);
+                    handleOpenAccount();
+                  } catch (err: any) {
+                    alert(err.message || '签到失败');
+                  }
+                }}
+                className={`w-full py-2.5 rounded-xl font-medium shadow transition-all ${signInInfo.today_signed 
+                  ? 'bg-green-100 text-green-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:-translate-y-0.5'}`}
+                disabled={signInInfo.today_signed}
+              >
+                {signInInfo.today_signed ? '✅ 今日已签到' : '🎁 立即签到'}
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">账号</span>
+                <span className="text-slate-900 font-medium truncate max-w-[180px]">{accountData?.email || accountData?.phone || '加载中...'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">注册时间</span>
+                <span className="text-slate-900">{accountData?.created_at ? new Date(accountData.created_at).toLocaleDateString('zh-CN') : '-'}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                const btn = document.getElementById('changePwBtn2');
+                const form = document.getElementById('changePwForm2');
+                if (form && btn) {
+                  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+                  btn.style.display = form.style.display === 'none' ? 'flex' : 'none';
+                }
+              }}
+              id="changePwBtn2"
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-medium shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+            >
+              🔑 修改密码
+            </button>
+
+            <div id="changePwForm2" style={{display: 'none'}} className="space-y-3">
+              <div className="flex gap-2">
+                <input type="text" id="pwCode2" placeholder="验证码" className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                <button
+                  id="sendPwCodeBtn2"
+                  onClick={async () => {
+                    const btn = document.getElementById('sendPwCodeBtn2') as HTMLButtonElement;
+                    btn.disabled = true;
+                    btn.textContent = '发送中...';
+                    try {
+                      const res = await fetch('/api/auth/send-change-pw-code', { method: 'POST' });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error);
+                      alert('验证码已发送到您的邮箱');
+                      let countdown = 60;
+                      const timer = setInterval(() => {
+                        countdown--;
+                        if (countdown <= 0) {
+                          clearInterval(timer);
+                          btn.disabled = false;
+                          btn.textContent = '发送验证码';
+                        } else {
+                          btn.textContent = `${countdown}秒`;
+                        }
+                      }, 1000);
+                    } catch (err: any) {
+                      alert(err.message || '发送失败');
+                      btn.disabled = false;
+                      btn.textContent = '发送验证码';
+                    }
+                  }}
+                  className="px-3 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 whitespace-nowrap"
+                >发送验证码</button>
+              </div>
+              <input type="password" id="newPw2" placeholder="新密码（至少6位）" className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+              <button
+                onClick={async () => {
+                  const pw = (document.getElementById('newPw2') as HTMLInputElement).value;
+                  const code = (document.getElementById('pwCode2') as HTMLInputElement).value;
+                  if (pw.length < 6) { alert('密码至少6位'); return; }
+                  if (!code) { alert('请输入验证码'); return; }
+                  const res = await fetch('/api/auth/set-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw, code, email: accountData?.email }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) { alert(data.error || '修改失败'); return; }
+                  alert('密码修改成功！');
+                  document.getElementById('changePwForm2')!.style.display = 'none';
+                  document.getElementById('changePwBtn2')!.style.display = 'flex';
+                  handleOpenAccount();
+                }}
+                className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm rounded-lg hover:opacity-90"
+              >确认修改</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* 关于我们弹窗 */}
+    {false && ( // 暂时隐藏，等用户确认
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl p-6">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">关于我们</h2>
+          <div className="space-y-4 text-slate-600 text-sm">
+            <p><strong className="text-indigo-600">Pepper 智能论文助手</strong>是一款基于人工智能技术的论文写作辅助工具。</p>
+            <p>我们致力于帮助学术研究者、学生快速生成高质量论文内容，降低AI检测率，提升论文通过率。</p>
+            <div className="bg-indigo-50 rounded-xl p-4 space-y-2">
+              <p className="font-medium text-indigo-700">核心功能</p>
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li>AI论文生成与润色</li>
+                <li>智能降重降AI率</li>
+                <li>AIGC检测服务</li>
+                <li>科研智能问答</li>
+              </ul>
+            </div>
+            <p className="text-center text-xs text-slate-400 pt-4">© 2026 Pepper 版权所有</p>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* 我的论文历史弹窗 */}
+    {showHistory && (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl">
+          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">📁 我的论文</h2>
+            <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="p-6 overflow-y-auto max-h-[calc(80vh-70px)]">
+            {paperHistory.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="w-10 h-10 text-slate-300" />
+                </div>
+                <p className="text-slate-500 text-lg mb-2">暂无历史文章</p>
+                <p className="text-slate-400 text-sm">近7天内生成的文章会显示在这里</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {paperHistory.map((paper: any) => (
+                  <div
+                    key={paper.id}
+                    className="w-full p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl transition group"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-slate-900 group-hover:text-indigo-700 mb-1">{paper.title || '无标题'}</h3>
+                        <p className="text-xs text-slate-500">{paper.major || ''} · {paper.paper_type || ''}</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {paper.created_at ? new Date(paper.created_at).toLocaleString('zh-CN') : ''}
+                        </p>
+                      </div>
+                      {/* 状态标签 */}
+                      {paper.status === 'generating' && (
+                        <span className="flex-shrink-0 text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+                          🔄 生成中 {paper.progress || 0}%
+                        </span>
+                      )}
+                      {paper.status === 'completed' && (
+                        <span className="flex-shrink-0 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                          ✅ 完成
+                        </span>
+                      )}
+                      {paper.status === 'failed' && (
+                        <span className="flex-shrink-0 text-xs text-red-600 bg-red-100 px-2 py-1 rounded-full">
+                          ❌ 失败
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 进度条 */}
+                    {paper.status === 'generating' && (
+                      <div className="mb-3">
+                        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
+                            style={{ width: `${paper.progress || 0}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">
+                          正在生成论文，预计需要3-5分钟，请稍候...
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      {paper.status === 'generating' ? (
+                        <>
+                          <button
+                            onClick={async () => {
+                              // 查询最新状态
+                              try {
+                                const res = await fetch(`/api/papers/status?id=${paper.id}`);
+                                const data = await res.json();
+                                if (data.paper) {
+                                  const updated = paperHistory.map(p => p.id === paper.id ? { ...p, ...data.paper } : p);
+                                  setPaperHistory(updated);
+                                }
+                              } catch { /* ignore */ }
+                            }}
+                            className="flex-1 py-2 bg-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-300 transition flex items-center justify-center gap-1"
+                          >
+                            🔄 刷新进度
+                          </button>
+                        </>
+                      ) : paper.status === 'completed' ? (
+                        <>
+                          <button
+                            onClick={() => router.push(`/editor?id=${paper.id}`)}
+                            className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-1"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                            编辑
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch('/api/export', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ paperId: paper.id }),
+                                });
+                                if (!res.ok) {
+                                  const data = await res.json().catch(() => ({}));
+                                  throw new Error(data.error || '导出失败');
+                                }
+                                const blob = await res.blob();
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${paper.title || '论文'}.docx`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              } catch (err: any) {
+                                alert(err.message || '下载失败');
+                              }
+                            }}
+                            className="flex-1 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-1"
+                          >
+                            <FileDown className="w-4 h-4" />
+                            下载
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('确定删除这篇论文？删除后不可恢复。')) return;
+                            try {
+                              const res = await fetch(`/api/papers?id=${paper.id}`, { method: 'DELETE', credentials: 'include' });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error);
+                              setPaperHistory(prev => prev.filter(p => p.id !== paper.id));
+                            } catch (err: any) {
+                              alert(err.message || '删除失败');
+                            }
+                          }}
+                          className="flex-1 py-2 bg-red-100 text-red-600 text-sm rounded-lg hover:bg-red-200 transition"
+                        >
+                          🗑️ 删除
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </div>
+  );
+}
+
+
+
+// 解析选题结果的辅助组件
+function TopicCards({ result, onSelect, selectedTopic }: { result: any; onSelect: (n: number, topicTitle?: string) => void; selectedTopic: number | null }) {
+  // 尝试解析结构化 JSON
+  let topics: any[] = [];
+  if (result && typeof result === 'object' && Array.isArray(result)) {
+    topics = result;
+  } else if (result && typeof result === 'string') {
+    try {
+      const match = result.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        // 兼容不同字段名格式
+        topics = parsed.map((item: any) => ({
+          title: item.title || item.TITLE || item.标题 || item.name || '',
+          question: item.question || item.QUESTION || item.核心问题 || '',
+          method: item.method || item.METHOD || item.研究方法 || ''
+        }));
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 如果解析后 topics 为空或没有有效标题，尝试直接从字符串提取
+  if (!topics.length || topics.every((t: any) => !t.title)) {
+    const strMatch = result?.match && result.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+    if (strMatch) {
+      try {
+        const rawItems = JSON.parse(strMatch[0]);
+        topics = rawItems.map((item: any) => {
+          const keys = Object.keys(item);
+          const titleKey = keys.find(k => /title|标题/i.test(k)) || keys[0];
+          const questKey = keys.find(k => /question|问题/i.test(k)) || keys[1];
+          const methodKey = keys.find(k => /method|方法/i.test(k)) || keys[2];
+          return {
+            title: item[titleKey] || '',
+            question: item[questKey] || '',
+            method: item[methodKey] || ''
+          };
+        });
+      } catch { /* ignore */ }
+    }
+  }
+
+  if (!topics || topics.length === 0) {
+    return (
+      <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed bg-slate-50 p-6 rounded-xl font-sans">
+        {typeof result === 'string' ? result : '加载失败'}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {topics.map((t: any, i: number) => (
+        <button
+          key={i}
+          onClick={() => onSelect(i + 1, t.title || t.TITLE || `方向${i + 1}`)}
+          className={`w-full p-6 rounded-2xl border-2 text-left transition ${
+            selectedTopic === i + 1
+              ? 'border-indigo-600 bg-indigo-50'
+              : 'border-slate-200 hover:border-indigo-300 bg-white hover:shadow-sm'
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0 ${
+              selectedTopic === i + 1 ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'
+            }`}>
+              {i + 1}
+            </div>
+            <div className="flex-1">
+              <h4 className="text-base font-bold text-slate-900 mb-2 leading-snug">
+                {t.title || t.TITLE || `方向${i + 1}`}
+              </h4>
+              {t.question && (
+                <p className="text-sm text-slate-600 mb-1">
+                  <span className="font-semibold text-slate-700">核心问题：</span>
+                  {t.question}
+                </p>
+              )}
+              {t.method && (
+                <p className="text-sm text-slate-500">
+                  <span className="font-semibold text-slate-600">研究方法：</span>
+                  {t.method}
+                </p>
+              )}
+            </div>
+            {selectedTopic === i + 1 && (
+              <Check className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-1" />
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
