@@ -133,26 +133,33 @@ export default function TemplatesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {filtered.map(tpl => (
               <div key={tpl.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:border-indigo-200 transition-all group">
-                {/* Preview - click to embed */}
+                {/* Preview - shows generated thumbnail or gradient placeholder */}
                 <div className="h-36 relative flex items-center justify-center cursor-pointer overflow-hidden bg-slate-100"
-                  onClick={() => window.open('https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent('https://pepperai.com.cn' + tpl.file), '_blank')}>
-                  {tpl.thumbnail ? (
-                    <img src={tpl.thumbnail} alt={tpl.name}
-                      className="w-full h-full object-cover"
-                      onError={e => { (e.target as HTMLImageElement).style.display='none'; }}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, #${tpl.colors.primary}44, #${tpl.colors.accent}44)` }}>
-                      <div className="text-3xl">📄</div>
-                    </div>
-                  )}
-                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/50 rounded text-white text-xs font-bold">#{tpl.index}</div>
+                  onClick={() => {
+                    const thumbUrl = tpl.file.replace('/templates/', '/thumbnails/').replace('.pptx', '.png');
+                    window.open(thumbUrl, '_blank');
+                  }}
+                  title="点击查看大图">
+                  <img
+                    src={tpl.file.replace('/templates/', '/thumbnails/').replace('.pptx', '.png')}
+                    alt={tpl.name}
+                    className="w-full h-full object-cover"
+                    onError={e => {
+                      (e.target as HTMLImageElement).style.display='none';
+                    }}
+                  />
+                  {/* Fallback: colored gradient if thumbnail missing */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    style={{ background: `linear-gradient(135deg, #${tpl.colors?.primary || '2B6CB0'}33, #${tpl.colors?.accent || 'e94560'}33)` }}>
+                    <div className="text-3xl opacity-50">📄</div>
+                  </div>
+                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/50 rounded text-white text-xs font-bold">#{filtered.indexOf(tpl) + 1}</div>
                   {/* Category tag */}
                   <div className="absolute top-2 right-2 px-2 py-0.5 bg-white/90 rounded-full text-xs font-medium text-slate-600">
                     {tpl.category}
                   </div>
                   {/* Delete */}
-                  <button onClick={() => setDeleteId(tpl.id)}
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteId(tpl.id); }}
                     className="absolute top-2 left-2 p-1.5 bg-white/90 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

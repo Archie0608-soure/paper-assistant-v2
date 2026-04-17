@@ -211,7 +211,34 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<Paper[]>([]);
   const [selectedPapers, setSelectedPapers] = useState<Paper[]>([]);
   const [searching, setSearching] = useState(false);
-  
+  const [searchError, setSearchError] = useState('');
+  const [searchFilter, setSearchFilter] = useState('全部');
+  const [searched, setSearched] = useState(false);
+  const filteredResults = searchFilter === '全部' ? searchResults : searchResults.filter((r: any) => r.source === searchFilter);
+
+  // Standalone search panel handler
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchError('');
+    setSearched(true);
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery.trim(), limit: 30 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '搜索失败');
+      setSearchResults(data.results || []);
+    } catch (err: any) {
+      setSearchError(err.message || '搜索失败，请稍后重试');
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   // Step 3: 大纲
   const [outlineLoading, setOutlineLoading] = useState(false);
   const [outline, setOutline] = useState<{ title: string; chapters: any[] } | null>(null);
@@ -759,7 +786,7 @@ export default function Home() {
   };
 
   // 搜索文献 - 用 AI 生成学术化搜索词，再多引擎并行搜
-  const handleSearch = async () => {
+  const handleGenerateSearch = async () => {
     if (!searchQuery.trim()) return;
     
     setSearching(true);
@@ -1358,7 +1385,7 @@ export default function Home() {
           <span className="font-medium">论文翻译</span>
         </button>
         <button
-          onClick={() => router.push('/search')}
+          onClick={() => setActiveFeature('search')}
           className="flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all bg-white text-slate-600 shadow border border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
         >
           <Library className="w-5 h-5" />
@@ -1413,7 +1440,7 @@ export default function Home() {
               <span className="font-medium">论文翻译</span>
             </button>
             <button
-              onClick={() => router.push('/search')}
+              onClick={() => setActiveFeature('search')}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 text-slate-600 hover:bg-slate-50 hover:text-indigo-600`}
             >
               <Library className="w-5 h-5" />
@@ -1801,7 +1828,7 @@ export default function Home() {
                     className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
                   />
                   <button
-                    onClick={handleSearch}
+                    onClick={handleGenerateSearch}
                     disabled={searching || !searchQuery.trim()}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
                   >
@@ -2189,6 +2216,114 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* 文献搜索界面 */}
+        {activeFeature === 'search' && (
+          <div className="w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">文献搜索</h3>
+                  <p className="text-xs text-slate-500">OpenAlex · arXiv · CrossRef · PubMed · DOAJ · 免费</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1 relative">
+                  <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    placeholder="输入论文主题、关键词或研究问题..."
+                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm" />
+                </div>
+                <button onClick={handleSearch} disabled={searching || !searchQuery.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon className="w-4 h-4" />}
+                  {searching ? '搜索中...' : '搜索'}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                {['全部', 'OpenAlex', 'arXiv', 'CrossRef', 'PubMed', 'DOAJ'].map(src => (
+                  <button key={src} onClick={() => setSearchFilter(src)}
+                    className={'px-3 py-1.5 rounded-full text-xs font-medium transition ' + (searchFilter === src ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+                    {src}
+                  </button>
+                ))}
+                <span className="text-xs text-slate-400 ml-2">
+                  {searching ? '搜索中...' : filteredResults.length + ' 条结果'}
+                </span>
+              </div>
+
+              {searchError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-4">{searchError}</div>
+              )}
+
+              {!searching && searched && filteredResults.length === 0 && !searchError && (
+                <div className="text-center py-12 text-slate-500">
+                  <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-medium">未找到相关文献</p>
+                  <p className="text-xs mt-1">试试更换关键词</p>
+                </div>
+              )}
+
+              {!searching && !searched && (
+                <div className="text-center py-10 text-slate-400">
+                  <BookOpen className="w-14 h-14 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-medium">输入关键词开始搜索</p>
+                  <p className="text-xs mt-1">支持中英文，支持复杂研究问题</p>
+                  <div className="flex gap-2 justify-center mt-3 flex-wrap">
+                    {['深度学习', '气候变化', '人工智能', '可持续能源'].map(k => (
+                      <button key={k} onClick={() => setSearchQuery(k)}
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition">
+                        {k}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {searching && (
+                <div className="text-center py-12 text-slate-400">
+                  <Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin" />
+                  <p className="text-sm">正在从多个学术数据库搜索...</p>
+                </div>
+              )}
+
+              {!searching && filteredResults.length > 0 && (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {filteredResults.map((paper, i) => {
+                    const srcColor = paper.source === 'OpenAlex' ? 'bg-blue-100 text-blue-700' : paper.source === 'arXiv' ? 'bg-orange-100 text-orange-700' : paper.source === 'CrossRef' ? 'bg-slate-100 text-slate-700' : paper.source === 'PubMed' ? 'bg-green-100 text-green-700' : paper.source === 'DOAJ' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-600';
+                    return (
+                      <div key={i} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <span className={'px-2 py-0.5 rounded text-xs font-medium ' + srcColor}>{paper.source}</span>
+                              {paper.year && <span className="text-xs text-slate-400">{paper.year}</span>}
+                              {paper.citations > 0 && <span className="text-xs text-amber-600">⭐ {paper.citations}</span>}
+                            </div>
+                            <h4 className="text-sm font-semibold text-slate-900 leading-snug mb-1">{paper.title}</h4>
+                            {paper.authors && paper.authors.length > 0 && <p className="text-xs text-slate-500 mb-1">{paper.authors.slice(0,3).join(' · ')}{paper.authors.length > 3 ? '...' : ''}</p>}
+                            <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{paper.abstract}</p>
+                          </div>
+                          <a href={paper.url} target="_blank" rel="noopener noreferrer"
+                            className="flex-shrink-0 w-8 h-8 bg-slate-100 hover:bg-indigo-100 rounded-lg flex items-center justify-center text-slate-500 hover:text-indigo-600 transition">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </main>
       </div>
 

@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-const TOKEN_SECRET = process.env.TOKEN_SECRET || process.env.EMAIL_USER || 'default-secret';
-const EMAIL_USER = process.env.EMAIL_USER || '';
-const EMAIL_PASS = process.env.EMAIL_PASS || '';
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'default-secret';
 
 let _supabase: any | null = null;
 function getSupabase() {
@@ -30,29 +27,41 @@ function createToken(email: string, code: string): string {
 }
 
 async function sendEmailCode(to: string, code: string) {
-  const transporter = nodemailer.createTransport({
-    service: '163',
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) throw new Error('邮件服务未配置（RESEND_API_KEY）');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 30px; border: 1px solid #e5e7eb; border-radius: 12px;">
+      <h2 style="color: #4f46e5; margin-bottom: 20px;">📄 Pepper 论文助手</h2>
+      <p style="font-size: 16px; color: #374151; margin-bottom: 10px;">您好！</p>
+      <p style="font-size: 16px; color: #374151; margin-bottom: 20px;">您正在修改密码，验证码是：</p>
+      <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px;">
+        <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4f46e5;">${code}</span>
+      </div>
+      <p style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">验证码 <strong>5 分钟</strong>内有效，请勿泄露给他人。</p>
+      <p style="font-size: 14px; color: #6b7280;">如果您没有请求此验证码，请忽略此邮件。</p>
+    </div>
+  `;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${resendKey}`,
+    },
+    body: JSON.stringify({
+      from: 'Pepper <noreply@pepperai.com.cn>',
+      to: [to],
+      subject: '【Pepper】修改密码验证码',
+      html,
+      text: `您正在修改密码，验证码是：${code}，5分钟内有效。`,
+    }),
   });
 
-  await transporter.sendMail({
-    from: `"Pepper" <${EMAIL_USER}>`,
-    to,
-    subject: '【Pepper】修改密码验证码',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 30px; border: 1px solid #e5e7eb; border-radius: 12px;">
-        <h2 style="color: #4f46e5; margin-bottom: 20px;">📄 Pepper 论文助手</h2>
-        <p style="font-size: 16px; color: #374151; margin-bottom: 10px;">您好！</p>
-        <p style="font-size: 16px; color: #374151; margin-bottom: 20px;">您正在修改密码，验证码是：</p>
-        <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; text-center; margin-bottom: 20px;">
-          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4f46e5;">${code}</span>
-        </div>
-        <p style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">验证码 <strong>5 分钟</strong>内有效，请勿泄露给他人。</p>
-        <p style="font-size: 14px; color: #6b7280;">如果您没有请求此验证码，请忽略此邮件。</p>
-      </div>
-    `,
-    text: `您正在修改密码，验证码是：${code}，5分钟内有效。`,
-  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Resend error: ${err}`);
+  }
 }
 
 export async function POST(req: NextRequest) {

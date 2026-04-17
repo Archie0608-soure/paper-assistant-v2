@@ -130,9 +130,14 @@ export async function POST(req: NextRequest) {
     await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', uid).eq('balance', balance);
 
     try {
-      const chunks = splitText(text);
+      // 用占位符保留段落结构，避免拼接时重复插入换行
+      const PARA_MARKER = '\x00PARA\x00';
+      const normalized = text.split(/\n{2,}/).map((p: string) => p.trim()).filter((p: string) => Boolean(p));
+      const chunks = splitText(normalized.join(PARA_MARKER + '\n\n' + PARA_MARKER), 1800);
       const translated = await Promise.all(chunks.map(c => translateChunk(c, from, to)));
-      const result = translated.join('\n\n');
+      const rawResult = translated.join('\n\n');
+      // 把占位符替换回双换行，还原段落结构
+      const result = rawResult.replace(new RegExp(PARA_MARKER + '\s*' + PARA_MARKER, 'g'), '\n\n').replace(new RegExp(PARA_MARKER, 'g'), '\n\n').trim();
 
       // 按实际输出字数结算
       const actualCoins = calcCoins(result);

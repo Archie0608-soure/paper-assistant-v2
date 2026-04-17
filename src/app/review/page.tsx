@@ -98,30 +98,51 @@ export default function ReviewPage() {
       return text;
     }
 
+    if (ext === 'ppt') {
+      throw new Error('不支持的格式：旧版PPT文件（.ppt）。请另存为PPT或PPTX格式后重试。');
+    }
+
     if (ext === 'pptx') {
       // pptx本质是zip，直接读xml
-      const JSZip = (window as any).JSZip;
-      if (!JSZip) {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-        document.head.appendChild(script);
-        await new Promise(r => script.onload = r);
-      }
-      const zip = await (window as any).JSZip.loadAsync(file);
-      const slideTexts: string[] = [];
+      const loadJSZip = (): Promise<any> => {
+        return new Promise((resolve, reject) => {
+          if ((window as any).JSZip) { resolve((window as any).JSZip); return; }
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+          script.onload = () => resolve((window as any).JSZip);
+          script.onerror = () => reject(new Error('JSZip库加载失败，请检查网络后重试'));
+          document.head.appendChild(script);
+        });
+      };
+
+      const JSZipLib = await loadJSZip();
+      // 用 Promise.race 添加超时保护（60秒）
+      const zip = await Promise.race([
+        JSZipLib.loadAsync(file),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('文件解析超时（60秒），文件可能过大或已损坏')), 60000)),
+      ]) as any;
+
+      const slideTexts: Array<{ num: number; text: string }> = [];
       const slideRegex = /ppt\/slides\/slide(\d+)\.xml/;
-      for (const [path, zipEntry] of Object.entries(await zip.files)) {
-        if (zipEntry && !(zipEntry as any).dir && slideRegex.test(path)) {
-          const xml = await (zipEntry as any).async('string');
+
+      const promises = Object.entries(zip.files)
+        .filter(([path, entry]: [string, any]) => !entry.dir && slideRegex.test(path))
+        .map(async ([path, entry]: [string, any]) => {
+          const num = parseInt(slideRegex.exec(path)?.[1] || '0');
+          const xml = await entry.async('string');
           const text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-          if (text) slideTexts.push(text);
-        }
-      }
-      return slideTexts.sort((a, b) => {
-        const numA = parseInt(slideRegex.exec('ppt/slides/slide1.xml')?.[1] || '0');
-        const numB = parseInt(slideRegex.exec('ppt/slides/slide2.xml')?.[1] || '0');
-        return numA - numB;
-      }).join('\n');
+          return { num, text };
+        });
+
+      const results = await Promise.all(promises);
+      const combined = results
+        .filter(r => r.text)
+        .sort((a, b) => a.num - b.num)
+        .map(r => r.text)
+        .join('\n');
+
+      if (!combined.trim()) throw new Error('未能从PPT中提取到有效文字内容，请确认文件内容非空');
+      return combined;
     }
 
     return '';
