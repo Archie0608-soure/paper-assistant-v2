@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages } from 'lucide-react';
+import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library } from 'lucide-react';
 import { exportToDocx } from '@/lib/docx';
 
 // 常见专业分类
@@ -1357,6 +1357,13 @@ export default function Home() {
           <Languages className="w-5 h-5" />
           <span className="font-medium">论文翻译</span>
         </button>
+        <button
+          onClick={() => router.push('/search')}
+          className="flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all bg-white text-slate-600 shadow border border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+        >
+          <Library className="w-5 h-5" />
+          <span className="font-medium">文献搜索</span>
+        </button>
       </div>
 
       <div className="max-w-6xl mx-auto flex gap-6 py-6 px-6">
@@ -1404,6 +1411,13 @@ export default function Home() {
             >
               <Languages className="w-5 h-5" />
               <span className="font-medium">论文翻译</span>
+            </button>
+            <button
+              onClick={() => router.push('/search')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 text-slate-600 hover:bg-slate-50 hover:text-indigo-600`}
+            >
+              <Library className="w-5 h-5" />
+              <span className="font-medium">文献搜索</span>
             </button>
           </div>
         </aside>

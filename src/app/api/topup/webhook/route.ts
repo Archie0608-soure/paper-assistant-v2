@@ -14,11 +14,22 @@ function getSupabase() {
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const params: Record<string, string> = {};
-    formData.forEach((value, key) => {
-      params[key] = String(value);
-    });
+    let params: Record<string, string> = {};
+    const ct = req.headers.get('content-type') || '';
+
+    if (ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data')) {
+      const fd = await req.formData();
+      fd.forEach((value, key) => { params[key] = String(value); });
+    } else {
+      // 虎皮椒可能发任意格式，直接取 raw body 再尝试解析
+      const text = await req.text();
+      // 优先当 JSON 解析
+      try { params = JSON.parse(text); }
+      catch {
+        //兜底当 query string 解析
+        new URLSearchParams(text).forEach((value, key) => { params[key] = value; });
+      }
+    }
 
     // 记录原始参数（用于调试）
     console.log('虎皮椒原始回调 params:', JSON.stringify(params));
@@ -125,6 +136,7 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('虎皮椒 webhook error:', error);
-    return NextResponse.json({ code: 'fail', msg: error.message }, { status: 500 });
+    // 返回 success 避免虎皮椒不重试（即使处理失败，订单状态也不可靠，让客户端用 verify 接口二次确认）
+    return NextResponse.json({ code: 'success', msg: error.message });
   }
 }

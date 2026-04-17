@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: xhData.errmsg || '支付发起失败' }, { status: 400 });
     }
 
-    // 保存订单
-    await getSupabase()
+    // 保存订单（必须成功，否则用户付了钱但我们没记录）
+    const { error: insertError } = await getSupabase()
       .from('topup_orders')
       .insert({
         user_id: user.id,
@@ -116,9 +116,13 @@ export async function POST(req: NextRequest) {
         coins,
         status: 'pending',
         method: 'wechat',
-        email: user.email || null,
-        phone: user.phone || null,
       });
+
+    if (insertError) {
+      console.error('订单保存失败:', orderNo, insertError);
+      return NextResponse.json({ error: '订单创建失败，请重试' }, { status: 500 });
+    }
+    console.log('订单创建成功:', orderNo);
 
     return NextResponse.json({
       success: true,

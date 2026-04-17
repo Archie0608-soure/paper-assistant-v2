@@ -60,8 +60,68 @@ export async function POST(req: NextRequest) {
 
     console.log('[verify] query order:', order_no);
     if (orderError || !order) {
-      console.log('[verify] order not found, error:', orderError);
-      return NextResponse.json({ error: '订单不存在' }, { status: 404 });
+      // 本地没找到订单 → 直接查虎皮椒（兜底：initiate 失败的情况）
+      console.log('[verify] order not found locally, querying 虎皮椒 for:', order_no);
+      const time = Math.floor(Date.now() / 1000);
+      const nonceStr = generateNonceStr();
+      const signData: Record<string, string> = {
+        appid: APP_ID,
+        trade_order_id: order_no,
+        time: String(time),
+        nonce_str: nonceStr,
+      };
+      const hash = buildXhHash(signData, APP_SECRET);
+      signData['hash'] = hash;
+      const payParams = new URLSearchParams();
+      Object.entries(signData).forEach(([k, v]) => payParams.append(k, v));
+      const xhRes = await fetch('https://api.dpweixin.com/payment/query.html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: payParams.toString(),
+      });
+      const xhData = await xhRes.json();
+      console.log('[verify] 虎皮椒 query result:', JSON.stringify(xhData));
+      if (xhData.status !== 'OD') {
+        return NextResponse.json({
+          status: 'pending',
+          message: '订单未找到，支付状态：' + (xhData.errmsg || xhData.status || '未知'),
+        });
+      }
+      // 虎皮椒已支付，但本地无记录 → 从 order_title 解析金币数量重建订单
+      const coinMatch = String(xhData.order_title || '').match(/(\d+)/);
+      const coins = coinMatch ? parseInt(coinMatch[1]) : 100;
+      const amount = parseFloat(xhData.total_fee) || coins / 10;
+      // 从 session 解析的用户身份查用户 ID
+      const { data: targetUser, error: userErr } = await supabase
+        .from('users').select('id, balance').eq(userField, destination).single();
+      if (userErr || !targetUser) {
+        return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+      }
+      const newBalance = (targetUser.balance || 0) + coins;
+      await supabase.from('users').update({ balance: newBalance }).eq('id', targetUser.id);
+      await supabase.from('topup_orders').insert({
+        user_id: targetUser.id,
+        order_no,
+        amount,
+        coins,
+        status: 'completed',
+        transaction_id: xhData.transaction_id || '',
+        completed_at: new Date().toISOString(),
+      });
+      await supabase.from('transactions').insert({
+        user_id: targetUser.id,
+        type: 'recharge',
+        amount: coins,
+        description: `充值 ${coins} 金币（虎皮椒验证）`,
+      });
+      console.log('[verify] 本地无记录但虎皮椒已支付，已重建订单加金币:', coins);
+      return NextResponse.json({
+        success: true,
+        status: 'completed',
+        message: `支付成功！${coins} 金币已到账`,
+        coins,
+        balance: newBalance,
+      });
     }
     console.log('[verify] order found:', order.id, 'status:', order.status);
 
