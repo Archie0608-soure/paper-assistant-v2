@@ -4,7 +4,7 @@ import crypto from 'crypto';
 
 const APP_ID = process.env.XUNHU_APP_ID || '';
 const APP_SECRET = process.env.XUNHU_APP_SECRET || '';
-const NOTIFY_URL = process.env.XUNHU_NOTIFY_URL || 'https://pepperai.com.cn/api/topup/webhook';
+const NOTIFY_URL = process.env.XUNHU_NOTIFY_URL; // 必须设置，不能有默认值
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
     const { coins } = await req.json();
     if (!coins) {
       return NextResponse.json({ error: '参数错误' }, { status: 400 });
+    }
+    if (!NOTIFY_URL) {
+      return NextResponse.json({ error: '服务器未配置支付回调地址，请联系管理员' }, { status: 500 });
     }
 
     const pkgMap: Record<number, number> = {
@@ -113,6 +116,8 @@ export async function POST(req: NextRequest) {
         coins,
         status: 'pending',
         method: 'wechat',
+        email: user.email || null,
+        phone: user.phone || null,
       });
 
     return NextResponse.json({

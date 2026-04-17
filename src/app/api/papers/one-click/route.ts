@@ -149,21 +149,43 @@ async function runOneClickGeneration(paperId: string, params: {
     if (params.userId && params.estimatedCost !== undefined) {
       const fullText = chapterContents.map((c: any) => c.content_generated || '').join('\n');
       const actualWords = countWords(fullText);
-      const actualCost = Math.round(actualWords / 1000) * 60;
+      // 实际字数最多按预估字数的2倍计算，防止AI生成失控导致天价账单
+      const cappedActualWords = Math.min(actualWords, (params.targetWords || 10000) * 2);
+      const actualCost = Math.round(cappedActualWords / 1000) * COINS_PER_THOUSAND_WORDS;
       const diff = actualCost - params.estimatedCost;
       if (diff !== 0) {
-        // 多扣了退钱，少扣了补扣
+        // 获取当前余额
         const { data: userRow } = await supabase.from('users').select('balance').eq('id', params.userId).single();
-        if (userRow) {
-          await supabase.from('users').update({ balance: userRow.balance - diff }).eq('id', params.userId);
+        if (!userRow) {
+          console.log('字数结算: 用户不存在，跳过');
+        } else if (diff > 0) {
+          // 少扣了，需要补扣（余额必须够，不允许欠费）
+          if ((userRow.balance || 0) < diff) {
+            // 余额不足，只记录欠费日志，不扣费（余额不能为负）
+            console.log(`字数结算: 余额不足! 实际${actualWords}字, 应付${actualCost}金币, 已扣${params.estimatedCost}, 还需补扣${diff}金币, 当前余额${userRow.balance}金币 —— 跳过补扣`);
+          } else {
+            // 余额足够，正常补扣
+            await supabase.from('users').update({ balance: userRow.balance - diff }).eq('id', params.userId);
+            await supabase.from('transactions').insert({
+              user_id: params.userId,
+              type: 'expense',
+              amount: -diff,
+              description: '论文生成字数结算补扣',
+            });
+            console.log(`字数结算: 实际${actualWords}字(上限${cappedActualWords}字), 应付${actualCost}金币, 已扣${params.estimatedCost}, 补扣${diff}金币`);
+          }
+        } else {
+          // 多扣了，退钱（直接加余额）
+          const refund = -diff;
+          await supabase.from('users').update({ balance: (userRow.balance || 0) + refund }).eq('id', params.userId);
           await supabase.from('transactions').insert({
             user_id: params.userId,
-            type: diff > 0 ? 'recharge' : 'expense',
-            amount: diff,
-            description: diff > 0 ? '论文生成字数结算退款' : '论文生成字数结算补扣',
+            type: 'recharge',
+            amount: refund,
+            description: '论文生成字数结算退款',
           });
+          console.log(`字数结算: 实际${actualWords}字(上限${cappedActualWords}字), 应付${actualCost}金币, 已扣${params.estimatedCost}, 退款${refund}金币`);
         }
-        console.log(`字数结算: 实际${actualWords}字, 应付${actualCost}金币, 已扣${params.estimatedCost}, ${diff > 0 ? '退' + diff : '补扣' + (-diff)}`);
       }
     }
     console.log(`论文生成完成: ${paperId}`);
@@ -241,7 +263,8 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = users[0].id;
-    const words = targetWords || WORD_COUNT_MAP[degree] || 10000;
+    const rawWords = targetWords || WORD_COUNT_MAP[degree] || 10000;
+    const words = Math.min(Math.max(Number(rawWords), 1000), 100000); // 限制在1千~10万字
 
     // 按字数计费：每千字60金币（四舍五入）
     const estimatedCost = Math.round(words / 1000) * COINS_PER_THOUSAND_WORDS;
