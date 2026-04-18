@@ -144,7 +144,7 @@ export default function Home() {
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<string>('generate');
+  const [activeFeature, setActiveFeature] = useState<string>('reduce');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', content: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -1716,7 +1716,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setActiveFeature('reduce')}
-              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'bg-white text-slate-600 shadow'}`}
+              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'bg-white text-slate-600 shadow-[0_2px_8px_rgba(0,0,0,0.06)]'}`}
             >
               <Scale className="w-6 h-6" />
               <span className="font-semibold text-base">降重降AI</span>
