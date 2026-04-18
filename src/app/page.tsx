@@ -1232,6 +1232,28 @@ export default function Home() {
     e.target.value = '';
   };
 
+  // 降重降AI：语言/平台/模式变化时重新查询费用（已上传文件的情况下）
+  useEffect(() => {
+    if (!reduceDocxFile || reduceDocxStep === 'idle') return;
+    // 防止首次渲染触发
+    const fd = new FormData();
+    fd.append('file', reduceDocxFile);
+    fd.append('lang', reduceLang);
+    fd.append('platform', reducePlatform);
+    setReduceParsing(true);
+    fetch('/api/ai/reduce-docx/cost', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.sessionId) {
+          setReduceSessionId(data.sessionId);
+          setReduceCost(data.cost);
+          setReduceCharCount(data.charCount || 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setReduceParsing(false));
+  }, [reduceLang, reducePlatform, reduceMode]);
+
   // 降重降AI：确认开始处理
   const handleReduceStart = async () => {
     if (!reduceDocxFile || !reduceSessionId) return;
