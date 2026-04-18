@@ -1480,7 +1480,7 @@ export default function Home() {
         )}
 
         {/* 步骤指示器 - 仅人机协作模式 */}
-        {activeFeature !== 'agent' && generateMode === 'collaborate' && (
+        {activeFeature === 'generate' && generateMode === 'collaborate' && (
           <div className="flex justify-center mb-8">
             <div className="flex items-center gap-2">
               {['选题', '文献搜索', '大纲', '写作'].map((label, i) => (
@@ -1502,7 +1502,7 @@ export default function Home() {
         )}
 
         {/* 模式切换 */}
-        {activeFeature !== 'agent' && (
+        {activeFeature === 'generate' && (
           <div className="flex justify-center mb-8">
             <div className="inline-flex bg-slate-100 p-1 rounded-xl">
               <button
@@ -1530,7 +1530,7 @@ export default function Home() {
         )}
 
         {/* Step 1: 输入论文信息 */}
-        {step === 1 && activeFeature !== 'agent' && (
+        {step === 1 && activeFeature === 'generate' && (
           <div className="space-y-8">
             <div className="text-center">
               <h2 className="text-3xl font-bold text-slate-900 mb-2">输入你的论文主题</h2>
