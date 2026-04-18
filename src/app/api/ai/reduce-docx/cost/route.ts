@@ -2,18 +2,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
 
-const RATE_PER_K = (lang: string) => lang === 'english' ? 20 : 40; // 英文20/千字，中文40/千字
+const RATE_PER_K: Record<string, Record<string, number>> = {
+  plagiarism: { chinese: 40, english: 20 },
+  ai:         { chinese: 40, english: 20 },
+  both:       { chinese: 60, english: 30 },
+};
 const FILE_TTL_MS = 10 * 60 * 1000; // 10分钟过期
 
 // 复用 start/route.ts 的全局 fileStore
 declare global {
-  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; createdAt: number }> | undefined;
+  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; createdAt: number }> | undefined;
 }
 if (!global.__fileStore) global.__fileStore = new Map();
 const fileStore = global.__fileStore;
 
-function calcCoins(charCount: number, lang: string): number {
-  return Math.ceil(charCount / 1000 * RATE_PER_K(lang));
+function calcCoins(charCount: number, lang: string, mode: string): number {
+  const rate = RATE_PER_K[mode]?.[lang] ?? RATE_PER_K['both'][lang];
+  return Math.ceil(charCount / 1000 * rate);
 }
 
 function cleanupExpired() {
@@ -29,6 +34,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File;
     const lang = (formData.get('lang') as string) || 'chinese';
     const platform = (formData.get('platform') as string) || 'zhiwang';
+    const mode = (formData.get('mode') as string) || 'both';
     const sessionId = (formData.get('sessionId') as string) || String(Date.now());
 
     if (!file) return NextResponse.json({ error: '请上传文件' }, { status: 400 });
@@ -44,11 +50,12 @@ export async function POST(req: NextRequest) {
       fileName: file.name,
       lang,
       platform,
+      mode,
       createdAt: Date.now(),
     });
 
-    const ourCoins = calcCoins(charCount || 1000, lang);
-    console.log(`[/reduce-docx/cost] 字符数=${charCount}，金币=${ourCoins}，sessionId=${sessionId}`);
+    const ourCoins = calcCoins(charCount || 1000, lang, mode);
+    console.log(`[/reduce-docx/cost] 字符数=${charCount}，金币=${ourCoins}，mode=${mode}，lang=${lang}，sessionId=${sessionId}`);
 
     return NextResponse.json({
       sessionId,

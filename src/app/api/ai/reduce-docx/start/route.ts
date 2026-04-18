@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // 复用 cost/route.ts 的 fileStore（通过全局变量）
 // 注意：Next.js 会保持这个在内存中
 declare global {
-  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; createdAt: number }> | undefined;
+  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; createdAt: number }> | undefined;
 }
 if (!global.__fileStore) global.__fileStore = new Map();
 
@@ -21,7 +21,7 @@ function cleanupExpired() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { sessionId, lang, platform } = await req.json();
+    const { sessionId, lang, platform, mode } = await req.json();
 
     if (!sessionId) return NextResponse.json({ error: '缺少 sessionId' }, { status: 400 });
 
@@ -32,16 +32,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '文件已过期，请重新上传' }, { status: 400 });
     }
 
-    const { buffer, fileName, lang: storedLang, platform: storedPlatform } = stored;
+    const { buffer, fileName, lang: storedLang, platform: storedPlatform, mode: storedMode } = stored;
     const effectiveLang = lang || storedLang;
     const effectivePlatform = platform || storedPlatform;
+    const effectiveMode = mode || storedMode;
 
     // 用文件调 SpeedAI /v1/cost（拿真正的 doc_id）
     const fd = new FormData();
     fd.append('file', new Blob([buffer as unknown as BlobPart]), fileName);
     fd.append('FileName', fileName);
     fd.append('username', SPEEDAI_API_KEY);
-    fd.append('mode', 'deai');
+    // 映射我们的模式到 SpeedAI 的 mode
+    const speedaiMode = effectiveMode === 'plagiarism' ? 'plagiarism'
+      : effectiveMode === 'ai' ? 'deai'
+      : 'both';
+    fd.append('mode', speedaiMode);
     fd.append('type_', effectivePlatform);
     fd.append('changed_only', String(false));
     fd.append('skip_english', effectiveLang === 'chinese' ? String(true) : String(false));

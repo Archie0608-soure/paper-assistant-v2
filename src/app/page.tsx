@@ -1214,6 +1214,7 @@ export default function Home() {
     fd.append('file', file);
     fd.append('lang', reduceLang);
     fd.append('platform', reducePlatform);
+    fd.append('mode', reduceMode);
 
     try {
       const res = await fetch('/api/ai/reduce-docx/cost', { method: 'POST', body: fd });
@@ -1240,6 +1241,7 @@ export default function Home() {
     fd.append('file', reduceDocxFile);
     fd.append('lang', reduceLang);
     fd.append('platform', reducePlatform);
+    fd.append('mode', reduceMode);
     setReduceParsing(true);
     fetch('/api/ai/reduce-docx/cost', { method: 'POST', body: fd })
       .then(r => r.json())
