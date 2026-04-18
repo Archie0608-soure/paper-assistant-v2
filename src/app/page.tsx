@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import mammoth from 'mammoth';
 import { useRouter } from 'next/navigation';
 import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload, Download, RotateCcw, Home as HomeIcon, Copy, Coins, CheckCircle, AlertCircle } from 'lucide-react';
+import SignInModal from '@/components/SignInModal';
 import { exportToDocx } from '@/lib/docx';
 
 // 常见专业分类
@@ -48,6 +49,7 @@ export default function Home() {
   // ===== 登录状态 =====
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSignInModal, setShowSignInModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   // 登录拦截：未登录则弹窗，已登录则执行
@@ -1565,7 +1567,7 @@ export default function Home() {
                           个人资料
                         </button>
                         <button
-                          onClick={() => router.push('/daily-signin')}
+                          onClick={() => { setShowUserMenu(false); requireLogin(() => setShowSignInModal(true)); }}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
                         >
                           <Calendar className="w-4 h-4 text-slate-400" />
@@ -2102,14 +2104,17 @@ export default function Home() {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
               <h3 className="text-xl font-semibold text-slate-900 mb-4">AI 推荐的 {major} 论文选题：</h3>
               
-              <TopicCards 
-                result={result} 
-                onSelect={(idx, topicTitle) => { 
-                  setSelectedTopic(idx); 
-                  setSelectedTopicTitle(topicTitle || ''); 
-                }} 
-                selectedTopic={selectedTopic} 
+              <TopicCards
+                result={result}
+                onSelect={(idx, topicTitle) => {
+                  setSelectedTopic(idx);
+                  setSelectedTopicTitle(topicTitle || '');
+                }}
+                selectedTopic={selectedTopic}
+                showSignInModal={showSignInModal}
+                setShowSignInModal={setShowSignInModal}
               />
+
               
               <div className="mt-6">
                 <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -3783,8 +3788,7 @@ export default function Home() {
 
 
 // 解析选题结果的辅助组件
-function TopicCards({ result, onSelect, selectedTopic }: { result: any; onSelect: (n: number, topicTitle?: string) => void; selectedTopic: number | null }) {
-  // 尝试解析结构化 JSON
+function TopicCards({ result, onSelect, selectedTopic, showSignInModal, setShowSignInModal }: { result: any; onSelect: (n: number, topicTitle?: string) => void; selectedTopic: number | null; showSignInModal: boolean; setShowSignInModal: (v: boolean) => void }) {  // 尝试解析结构化 JSON
   let topics: any[] = [];
   if (result && typeof result === 'object' && Array.isArray(result)) {
     topics = result;
@@ -3873,6 +3877,9 @@ function TopicCards({ result, onSelect, selectedTopic }: { result: any; onSelect
           </div>
         </button>
       ))}
+      {showSignInModal && (
+        <SignInModal onClose={() => setShowSignInModal(false)} />
+      )}
     </div>
   );
 }
