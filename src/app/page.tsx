@@ -3020,9 +3020,9 @@ export default function Home() {
                   <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
                     {/* 连接线 */}
                     {idx < 3 && (
-                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-gradient-to-r from-indigo-200 to-purple-200 -z-0" style={{width: 'calc(100% - 2rem)', left: 'calc(50% + 1rem)'}} />
+                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-gradient-to-r from-orange-200 via-pink-200 to-rose-200 -z-0" style={{width: 'calc(100% - 2rem)', left: 'calc(50% + 1rem)'}} />
                     )}
-                    <div className="relative z-10 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-xl shadow-lg shadow-indigo-200 mb-2">
+                    <div className="relative z-10 w-12 h-12 bg-gradient-to-br from-orange-300 via-pink-300 to-rose-300 rounded-2xl flex items-center justify-center text-xl shadow-lg shadow-rose-100 mb-2">
                       {item.icon}
                     </div>
                     <p className="text-xs font-semibold text-slate-800">{item.label}</p>
