@@ -3006,6 +3006,32 @@ export default function Home() {
         {/* 降重降AI界面 */}
         {activeFeature === 'reduce' && (
           <div className="relative z-10 w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+
+            {/* 四步流程指引 */}
+            <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 p-5">
+              <p className="text-sm font-semibold text-slate-700 mb-4 text-center">简单四步，快速降低论文重复率 & AI率</p>
+              <div className="flex items-center justify-between gap-2">
+                {[
+                  { step: 1, icon: '📄', label: '上传文档', desc: 'Word .docx' },
+                  { step: 2, icon: '⚙️', label: '选择模式', desc: '单降/双降' },
+                  { step: 3, icon: '🔄', label: '智能处理', desc: '30秒~3分钟' },
+                  { step: 4, icon: '✅', label: '下载结果', desc: '即刻使用' },
+                ].map((item, idx) => (
+                  <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
+                    {/* 连接线 */}
+                    {idx < 3 && (
+                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-gradient-to-r from-indigo-200 to-purple-200 -z-0" style={{width: 'calc(100% - 2rem)', left: 'calc(50% + 1rem)'}} />
+                    )}
+                    <div className="relative z-10 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-xl shadow-lg shadow-indigo-200 mb-2">
+                      {item.icon}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-800">{item.label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="bg-white/95 rounded-2xl shadow-lg border border-slate-200/60 p-6 backdrop-blur-sm">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
