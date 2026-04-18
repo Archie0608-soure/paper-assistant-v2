@@ -1458,7 +1458,7 @@ export default function Home() {
         </aside>
 
         {/* 主内容区 */}
-        <main className="flex-1 md:ml-64">
+        <main className="flex-1 md:ml-64 overflow-hidden">
         {/* 科研智能体聊天界面 */}
         {activeFeature === 'agent' && (
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200 h-[calc(100vh-200px)] flex flex-col">
