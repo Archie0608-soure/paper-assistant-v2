@@ -3023,7 +3023,7 @@ export default function Home() {
 
             {/* 四步流程指引（四个白色圆圈，无大卡片背景） */}
             <div className="flex flex-col items-center gap-3">
-              <p className="text-sm font-semibold text-slate-600">简单四步，快速降低论文重复率 & AI率</p>
+              <p className={`text-sm font-semibold transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-600' : 'text-white'}`}>简单四步，快速降低论文重复率 & AI率</p>
               <div className="flex items-center justify-between w-full max-w-2xl">
                 {[
                   { step: 1, label: '上传文档', desc: 'Word .docx' },
@@ -3036,24 +3036,30 @@ export default function Home() {
                     {idx < 3 && (
                       <div className="absolute top-5 left-1/2 w-full h-0.5 bg-slate-200 -z-0" style={{width: 'calc(100% - 3rem)', left: 'calc(50% + 1.5rem)'}} />
                     )}
-                    <div className="relative z-10 w-10 h-10 bg-white border-2 border-indigo-400 rounded-full flex items-center justify-center text-sm font-bold text-indigo-600 shadow-sm">
+                    <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm border-2 transition-colors duration-700 ${
+                      activeFeature === 'reduce' ? 'bg-white border-indigo-400 text-indigo-600' : 'bg-white/90 border-white text-slate-700'
+                    }`}>
                       {item.step}
                     </div>
-                    <p className="text-xs font-semibold text-slate-700 mt-1.5">{item.label}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{item.desc}</p>
+                    <p className={`text-xs font-semibold mt-1.5 transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-700' : 'text-white'}`}>{item.label}</p>
+                    <p className={`text-xs mt-0.5 transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-400' : 'text-white/60'}`}>{item.desc}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white/95 rounded-2xl shadow-lg border border-slate-200/60 p-6 backdrop-blur-sm">
+            <div className={`rounded-2xl shadow-lg border p-6 backdrop-blur-sm transition-all duration-700 ${
+              activeFeature === 'reduce'
+                ? 'bg-white/90 border-white/40'
+                : 'bg-white/95 border-slate-200/60'
+            }`}>
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${activeFeature === 'reduce' ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}>
                   <Scale className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-slate-900">降重降AI</h3>
-                  <p className="text-xs text-slate-500">上传论文文档，一键降低重复率 & AI率</p>
+                  <h3 className={`font-semibold transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-900' : 'text-white'}`}>降重降AI</h3>
+                  <p className={`text-xs transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-500' : 'text-white/70'}`}>上传论文文档，一键降低重复率 & AI率</p>
                 </div>
               </div>
 
