@@ -1696,11 +1696,11 @@ export default function Home() {
         <aside className="hidden md:block w-52 flex-shrink-0 fixed left-6 top-1/2 -translate-y-1/2 z-30">
           <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 overflow-hidden">
             <button
-              onClick={() => setActiveFeature('generate')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              onClick={() => setActiveFeature('reduce')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
-              <FileText className="w-5 h-5" />
-              <span className="font-medium">文章生成</span>
+              <Scale className="w-5 h-5" />
+              <span className="font-medium">降重降AI</span>
             </button>
             <button
               onClick={() => setActiveFeature('translate')}
@@ -1717,11 +1717,11 @@ export default function Home() {
               <span className="font-medium">AI PPT</span>
             </button>
             <button
-              onClick={() => setActiveFeature('reduce')}
-              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'bg-white text-slate-600 shadow-[0_2px_8px_rgba(0,0,0,0.06)]'}`}
+              onClick={() => setActiveFeature('generate')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
-              <Scale className="w-6 h-6" />
-              <span className="font-semibold text-base">降重降AI</span>
+              <FileText className="w-5 h-5" />
+              <span className="font-medium">文章生成</span>
             </button>
             <button
               onClick={() => setActiveFeature('review')}
