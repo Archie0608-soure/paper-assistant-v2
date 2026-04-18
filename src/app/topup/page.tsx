@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
 
 const PACKAGES = [
   { coins: 100, price: 10, bonus: 0, label: '基础' },
@@ -12,9 +12,15 @@ const PACKAGES = [
   { coins: 6000, price: 600, bonus: 600, bonusLabel: '送600', label: '至尊' },
 ];
 
+const PAY_METHODS = [
+  { id: 'wechat', label: '微信支付', icon: '💬', color: 'from-green-500 to-emerald-600' },
+  { id: 'alipay', label: '支付宝', icon: '💙', color: 'from-blue-500 to-sky-600' },
+];
+
 export default function TopupPage() {
   const router = useRouter();
   const [selected, setSelected] = useState<number>(1);
+  const [payMethod, setPayMethod] = useState('wechat');
   const [loading, setLoading] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
@@ -31,7 +37,7 @@ export default function TopupPage() {
       const res = await fetch('/api/topup/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coins: pkg.coins }),
+        body: JSON.stringify({ coins: pkg.coins, method: payMethod }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.message);
@@ -41,28 +47,26 @@ export default function TopupPage() {
         setQrCode(data.url_qrcode);
         setPayUrl(data.url);
         setOrderNo(data.orderNo);
+      } else if (data.payUrl && data.payData) {
+        // 跳转支付
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = data.payUrl;
+        form.acceptCharset = 'UTF-8';
+        form.target = '_blank';
+        const params = new URLSearchParams(data.payData);
+        params.forEach((value, key) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = value;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
       } else {
-        // 旧版跳转
-        if (data.payUrl && data.payData) {
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = data.payUrl;
-          form.acceptCharset = 'UTF-8';
-          form.target = '_blank';
-          const params = new URLSearchParams(data.payData);
-          params.forEach((value, key) => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key;
-            input.value = value;
-            form.appendChild(input);
-          });
-          document.body.appendChild(form);
-          form.submit();
-          document.body.removeChild(form);
-        } else {
-          alert('发起支付成功，请完成支付');
-        }
+        alert('发起支付成功，请完成支付');
       }
     } catch (err: any) {
       alert(err.message || '发起充值失败');
@@ -94,14 +98,14 @@ export default function TopupPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+
         {/* 微信支付二维码 */}
         {qrCode && (
           <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 text-center">
-            <h2 className="font-bold text-lg text-slate-900 mb-4">请使用微信扫码支付</h2>
+            <h2 className="font-bold text-lg text-slate-900 mb-4">请使用{payMethod === 'wechat' ? '微信' : '支付宝'}扫码支付</h2>
             <div className="flex justify-center mb-4">
-              {/* 微信二维码图片 */}
               <a href={qrCode} target="_blank" rel="noopener noreferrer">
-                <img src={qrCode} alt="微信支付二维码" className="w-56 h-56 rounded-lg cursor-pointer hover:opacity-90" />
+                <img src={qrCode} alt="支付二维码" className="w-56 h-56 rounded-lg cursor-pointer hover:opacity-90" />
               </a>
             </div>
             <p className="text-sm text-slate-500 mb-2">支付金额：<span className="font-bold text-indigo-600">¥{pkg.price}</span></p>
@@ -114,7 +118,7 @@ export default function TopupPage() {
             </a>
             <button
               onClick={cancelPayment}
-              className="px-6 py-2 text-sm text-slate-500 hover:text-slate-700 border border-slate-300 rounded-lg"
+              className="px-6 py-2 text-sm text-slate-500 hover:text-slate-700 border border-slate-300 rounded-lg block mx-auto"
             >
               取消
             </button>
@@ -133,7 +137,40 @@ export default function TopupPage() {
                 <p className="text-xs text-slate-500">1元 = 10金币 · 千字100金币</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600">选择充值金额，支付完成后金币自动到账</p>
+            <p className="text-sm text-slate-600">选择充值金额和支付方式，支付完成后金币自动到账</p>
+          </div>
+        )}
+
+        {/* 支付方式选择 */}
+        {!qrCode && (
+          <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200">
+            <h2 className="font-semibold text-slate-900 mb-4">选择支付方式</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {PAY_METHODS.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setPayMethod(m.id)}
+                  className={`relative p-4 rounded-xl border-2 text-left transition-all ${
+                    payMethod === m.id
+                      ? 'border-indigo-500 bg-indigo-50 shadow-md'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{m.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{m.label}</p>
+                      <p className="text-xs text-slate-400">{m.id === 'wechat' ? '推荐' : '安全便捷'}</p>
+                    </div>
+                  </div>
+                  {payMethod === m.id && (
+                    <div className="absolute top-2 right-2">
+                      <CheckCircle className="w-4 h-4 text-indigo-500" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -179,10 +216,14 @@ export default function TopupPage() {
             <button
               onClick={handleTopup}
               disabled={loading}
-              className="w-full py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className={`w-full py-4 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                payMethod === 'wechat'
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-700'
+                  : 'bg-gradient-to-r from-blue-500 to-sky-600'
+              }`}
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-              {loading ? '正在生成二维码...' : `微信支付 ¥${pkg.price}`}
+              {loading ? '正在生成二维码...' : `${payMethod === 'wechat' ? '微信支付' : '支付宝'} ¥${pkg.price}`}
             </button>
             <p className="text-xs text-slate-400 text-center mt-3">支付安全由虎皮椒提供保障</p>
           </div>

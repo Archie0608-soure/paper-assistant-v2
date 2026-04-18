@@ -3020,13 +3020,28 @@ export default function Home() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-600 block mb-1">检测平台</label>
-                  <select value={reducePlatform} onChange={e => setReducePlatform(e.target.value)}
-                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-400">
-                    {reduceLang === 'chinese'
-                      ? <><option value="zhiwang">知网</option><option value="vip">维普</option><option value="gezida">格子达</option><option value="daya">大雅</option><option value="wanfang">万方</option></>
-                      : <><option value="zhiwang">知网</option><option value="vip">维普</option><option value="turnitin">Turnitin</option></>
-                    }
-                  </select>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(reduceLang === 'chinese'
+                      ? [
+                          { id: 'zhiwang', label: '知网', color: 'bg-orange-50 border-orange-200 text-orange-700 active:ring-orange-400', active: 'bg-gradient-to-br from-orange-400 to-red-500 text-white shadow-orange-200 shadow' },
+                          { id: 'vip', label: '维普', color: 'bg-blue-50 border-blue-200 text-blue-700 active:ring-blue-400', active: 'bg-gradient-to-br from-blue-400 to-indigo-500 text-white shadow-blue-200 shadow' },
+                          { id: 'gezida', label: '格子达', color: 'bg-purple-50 border-purple-200 text-purple-700 active:ring-purple-400', active: 'bg-gradient-to-br from-purple-400 to-pink-500 text-white shadow-purple-200 shadow' },
+                          { id: 'daya', label: '大雅', color: 'bg-green-50 border-green-200 text-green-700 active:ring-green-400', active: 'bg-gradient-to-br from-green-400 to-teal-500 text-white shadow-green-200 shadow' },
+                          { id: 'wanfang', label: '万方', color: 'bg-teal-50 border-teal-200 text-teal-700 active:ring-teal-400', active: 'bg-gradient-to-br from-teal-400 to-cyan-500 text-white shadow-teal-200 shadow' },
+                        ]
+                      : [
+                          { id: 'zhiwang', label: '知网', color: 'bg-orange-50 border-orange-200 text-orange-700 active:ring-orange-400', active: 'bg-gradient-to-br from-orange-400 to-red-500 text-white shadow-orange-200 shadow' },
+                          { id: 'vip', label: '维普', color: 'bg-blue-50 border-blue-200 text-blue-700 active:ring-blue-400', active: 'bg-gradient-to-br from-blue-400 to-indigo-500 text-white shadow-blue-200 shadow' },
+                          { id: 'turnitin', label: 'Turnitin', color: 'bg-red-50 border-red-200 text-red-700 active:ring-red-400', active: 'bg-gradient-to-br from-red-400 to-orange-500 text-white shadow-red-200 shadow' },
+                        ]
+                    ).map(p => (
+                      <button key={p.id}
+                        onClick={() => setReducePlatform(p.id)}
+                        className={`py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95 ${reducePlatform === p.id ? p.active : p.color}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const destination = dest || beforeLast;
     const userField = type === 'email' ? 'email' : 'phone';
 
-    const { coins } = await req.json();
+    const { coins, method = 'wechat' } = await req.json();
     if (!coins) {
       return NextResponse.json({ error: '参数错误' }, { status: 400 });
     }
@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
       notify_url: NOTIFY_URL,
       return_url: `https://pepperai.com.cn/topup/success?order=${orderNo}`,
       nonce_str: nonceStr,
+      ...(method === 'alipay' ? { paymethod: 'alipay' } : {}),
     };
 
     const hash = buildXhHash(signData, APP_SECRET);
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
         amount,
         coins,
         status: 'pending',
-        method: 'wechat',
+        method: method,
       });
 
     if (insertError) {
