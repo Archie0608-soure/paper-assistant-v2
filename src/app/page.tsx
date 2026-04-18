@@ -1565,7 +1565,7 @@ export default function Home() {
                           个人资料
                         </button>
                         <button
-                          onClick={() => { setShowUserMenu(false); requireLogin(() => handleSignIn()); }}
+                          onClick={() => router.push('/daily-signin')}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
                         >
                           <Calendar className="w-4 h-4 text-slate-400" />
