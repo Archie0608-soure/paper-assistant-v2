@@ -1491,9 +1491,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen select-none animate-aurora relative">
-      {/* 降重降AI背景渐变叠加层（切换时动画过渡） */}
+      {/* 背景渐变叠加层 */}
       <div
-        className={`absolute inset-0 z-0 pointer-events-none transition-opacity duration-700 ${activeFeature === 'reduce' ? 'opacity-100 bg-gradient-to-br from-rose-100 via-orange-50 to-emerald-100' : 'opacity-0'}`}
+        className={`absolute inset-0 -z-10 transition-all duration-700 ${
+          activeFeature === 'reduce' ? 'bg-gradient-to-br from-teal-100 via-emerald-50 to-teal-200' :
+          activeFeature === 'translate' ? 'bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100' :
+          activeFeature === 'ppt' ? 'bg-gradient-to-br from-pink-100 via-rose-50 to-fuchsia-100' :
+          activeFeature === 'generate' ? 'bg-gradient-to-br from-amber-100 via-orange-50 to-yellow-100' :
+          activeFeature === 'review' ? 'bg-gradient-to-br from-fuchsia-100 via-pink-50 to-rose-100' :
+          activeFeature === 'search' ? 'bg-gradient-to-br from-yellow-100 via-orange-50 to-amber-100' :
+          activeFeature === 'agent' ? 'bg-gradient-to-br from-violet-100 via-purple-50 to-fuchsia-100' :
+          'bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-950'
+        }`}
       />
       {/* 顶部 Header */}
       <header className="bg-[#7c3aed] sticky top-0 z-50 shadow-md">
