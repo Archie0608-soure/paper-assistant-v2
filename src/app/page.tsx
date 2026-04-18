@@ -1716,7 +1716,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setActiveFeature('reduce')}
-              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'bg-white text-slate-600 shadow'}`}
             >
               <Scale className="w-6 h-6" />
               <span className="font-semibold text-base">降重降AI</span>
