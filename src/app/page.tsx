@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import mammoth from 'mammoth';
 import { useRouter } from 'next/navigation';
-import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library } from 'lucide-react';
+import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload } from 'lucide-react';
 import { exportToDocx } from '@/lib/docx';
 
 // 常见专业分类
@@ -160,6 +161,32 @@ export default function Home() {
   const [reduceFileName, setReduceFileName] = useState('');
   const [reduceFileSize, setReduceFileSize] = useState('');
   const countWords = (t: string) => t ? t.replace(/\s/g, '').length : 0;
+
+  // 翻译功能状态
+  const [translateInput, setTranslateInput] = useState('');
+  const [translateResult, setTranslateResult] = useState('');
+  const [translateFrom, setTranslateFrom] = useState('zh');
+  const [translateTo, setTranslateTo] = useState('en');
+  const [translateLoading, setTranslateLoading] = useState(false);
+  const [translateError, setTranslateError] = useState('');
+  const [translateFileName, setTranslateFileName] = useState('');
+  const translateFileRef = useRef<HTMLInputElement>(null);
+
+  const LANGUAGES = [
+    { code: 'zh', label: '中文' },
+    { code: 'en', label: 'English' },
+    { code: 'ja', label: '日本語' },
+    { code: 'ko', label: '한국어' },
+    { code: 'fr', label: 'Français' },
+    { code: 'de', label: 'Deutsch' },
+    { code: 'es', label: 'Español' },
+    { code: 'ru', label: 'Русский' },
+    { code: 'pt', label: 'Português' },
+    { code: 'it', label: 'Italiano' },
+    { code: 'ar', label: 'العربية' },
+    { code: 'th', label: 'ภาษาไทย' },
+    { code: 'vi', label: 'Tiếng Việt' },
+  ];
 
   const [loginType, setLoginType] = useState<'phone' | 'email'>('email');
   const [loginDest, setLoginDest] = useState('');
@@ -1005,6 +1032,60 @@ export default function Home() {
     }
   };
 
+  // 翻译：处理文件上传
+  const handleTranslateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTranslateFileName(file.name);
+    setTranslateError('');
+    try {
+      let text = '';
+      if (file.name.endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const { value } = await mammoth.extractRawText({ arrayBuffer });
+        text = value;
+      } else if (file.name.endsWith('.txt')) {
+        text = await file.text();
+      } else {
+        setTranslateError('仅支持 .docx 和 .txt 文件');
+        return;
+      }
+      setTranslateInput(text);
+    } catch {
+      setTranslateError('文件读取失败，请重试');
+    }
+  };
+
+  // 翻译：交换语言
+  const swapTranslateLang = () => {
+    setTranslateFrom(translateTo);
+    setTranslateTo(translateFrom);
+    setTranslateInput(translateResult);
+    setTranslateResult(translateInput);
+  };
+
+  // 翻译：执行翻译
+  const handleTranslate = async () => {
+    if (!translateInput.trim()) { setTranslateError('请输入文本或上传文件'); return; }
+    setTranslateLoading(true);
+    setTranslateError('');
+    setTranslateResult('');
+    try {
+      const res = await fetch('/api/ai/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: translateInput, from: translateFrom, to: translateTo }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setTranslateError(data.error || '翻译失败'); return; }
+      setTranslateResult(data.result || '');
+    } catch {
+      setTranslateError('网络错误，请重试');
+    } finally {
+      setTranslateLoading(false);
+    }
+  };
+
   // 保存章节
   const handleSaveChapter = () => {
     setChapters(prev => prev.map(c => 
@@ -1224,18 +1305,11 @@ export default function Home() {
           <span className="font-semibold">文章生成</span>
         </button>
         <button
-          onClick={() => setActiveFeature('agent')}
-          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+          onClick={() => setActiveFeature('translate')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
-          <Bot className="w-5 h-5" />
-          <span className="font-medium">科研智能体</span>
-        </button>
-        <button
-          onClick={() => router.push('/reduce')}
-          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
-        >
-          <Scale className="w-5 h-5" />
-          <span className="font-medium">降重降AI</span>
+          <Languages className="w-5 h-5" />
+          <span className="font-medium">论文翻译</span>
         </button>
         <button
           onClick={() => router.push('/ppt')}
@@ -1245,18 +1319,32 @@ export default function Home() {
           <span className="font-medium">AI PPT</span>
         </button>
         <button
-          onClick={() => router.push('/translate')}
-          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+          onClick={() => router.push('/reduce')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
-          <Languages className="w-5 h-5" />
-          <span className="font-medium">论文翻译</span>
+          <Scale className="w-5 h-5" />
+          <span className="font-medium">降重降AI</span>
+        </button>
+        <button
+          onClick={() => router.push('/review')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Brain className="w-5 h-5" />
+          <span className="font-medium">复习资料</span>
         </button>
         <button
           onClick={() => setActiveFeature('search')}
-          className="flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all bg-white text-slate-600 shadow border border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'search' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
           <Library className="w-5 h-5" />
           <span className="font-medium">文献搜索</span>
+        </button>
+        <button
+          onClick={() => setActiveFeature('agent')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
+        >
+          <Bot className="w-5 h-5" />
+          <span className="font-medium">科研智能体</span>
         </button>
       </div>
 
@@ -1272,18 +1360,11 @@ export default function Home() {
               <span className="font-semibold text-base">文章生成</span>
             </button>
             <button
-              onClick={() => setActiveFeature('agent')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+              onClick={() => setActiveFeature('translate')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
-              <Bot className="w-5 h-5" />
-              <span className="font-medium">科研智能体</span>
-            </button>
-            <button
-              onClick={() => router.push('/reduce')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
-            >
-              <Scale className="w-5 h-5" />
-              <span className="font-medium">降重降AI</span>
+              <Languages className="w-5 h-5" />
+              <span className="font-medium">论文翻译</span>
             </button>
             <button
               onClick={() => router.push('/ppt')}
@@ -1293,6 +1374,13 @@ export default function Home() {
               <span className="font-medium">AI PPT</span>
             </button>
             <button
+              onClick={() => router.push('/reduce')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Scale className="w-5 h-5" />
+              <span className="font-medium">降重降AI</span>
+            </button>
+            <button
               onClick={() => router.push('/review')}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
@@ -1300,18 +1388,18 @@ export default function Home() {
               <span className="font-medium">复习资料</span>
             </button>
             <button
-              onClick={() => router.push('/translate')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
-            >
-              <Languages className="w-5 h-5" />
-              <span className="font-medium">论文翻译</span>
-            </button>
-            <button
               onClick={() => setActiveFeature('search')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 text-slate-600 hover:bg-slate-50 hover:text-indigo-600`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'search' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
               <Library className="w-5 h-5" />
               <span className="font-medium">文献搜索</span>
+            </button>
+            <button
+              onClick={() => setActiveFeature('agent')}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+            >
+              <Bot className="w-5 h-5" />
+              <span className="font-medium">科研智能体</span>
             </button>
           </div>
         </aside>
@@ -2185,6 +2273,99 @@ export default function Home() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 论文翻译界面 */}
+        {activeFeature === 'translate' && (
+          <div className="w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <Languages className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">论文翻译</h3>
+                  <p className="text-xs text-slate-500">支持13种语言互译 · 保留文档格式</p>
+                </div>
+              </div>
+
+              {/* 语言选择 */}
+              <div className="flex items-center gap-3 mb-4">
+                <select value={translateFrom} onChange={e => setTranslateFrom(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+                <button onClick={swapTranslateLang}
+                  className="p-2 rounded-full hover:bg-slate-100 transition text-slate-500 hover:text-indigo-600"
+                  title="交换语言">
+                  <ArrowRight className="w-4 h-4 rotate-180" />
+                </button>
+                <select value={translateTo} onChange={e => setTranslateTo(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+              </div>
+
+              {/* 原文输入区 */}
+              <div className="bg-slate-50 rounded-xl border border-slate-200 mb-4">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>原文 {translateInput ? `(${translateInput.length} 字符)` : ''}</span>
+                    {translateFileName && <span className="text-indigo-600">📎 {translateFileName}</span>}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="file" accept=".docx,.txt" ref={translateFileRef} onChange={handleTranslateFile} className="hidden" />
+                    <button onClick={() => translateFileRef.current?.click()}
+                      className="flex items-center gap-1 px-3 py-1 text-xs text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition">
+                      <Upload className="w-3 h-3" /> 上传文件
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={translateInput}
+                  onChange={e => setTranslateInput(e.target.value)}
+                  placeholder="粘贴要翻译的文本，或上传 .docx / .txt 文件..."
+                  className="w-full p-4 h-40 text-sm resize-none focus:outline-none rounded-b-xl"
+                  onCopy={e => e.preventDefault()}
+                  onPaste={e => e.preventDefault()}
+                  onCut={e => e.preventDefault()}
+                />
+              </div>
+
+              {/* 翻译按钮 */}
+              <div className="flex justify-center mb-4">
+                <button onClick={handleTranslate} disabled={translateLoading}
+                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  {translateLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
+                  {translateLoading ? '翻译中...' : '开始翻译'}
+                </button>
+              </div>
+
+              {/* 错误提示 */}
+              {translateError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-4 text-center">{translateError}</div>
+              )}
+
+              {/* 译文区 */}
+              {translateResult && (
+                <div className="bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
+                    <span className="text-xs text-slate-500">译文 {translateResult.length} 字符</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(translateResult); alert('已复制到剪贴板'); }}
+                      className="flex items-center gap-1 px-3 py-1 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                      <FileDown className="w-3 h-3" /> 复制
+                    </button>
+                  </div>
+                  <textarea value={translateResult} readOnly
+                    className="w-full p-4 h-40 text-sm resize-none focus:outline-none rounded-b-xl bg-slate-50"
+                    onCopy={e => e.preventDefault()} onPaste={e => e.preventDefault()} onCut={e => e.preventDefault()}
+                  />
                 </div>
               )}
             </div>
