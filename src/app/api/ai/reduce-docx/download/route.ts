@@ -4,7 +4,36 @@ import https from 'https';
 
 const SPEEDAI_HOST = 'api3.speedai.chat';
 
+function verifySession(req: NextRequest): boolean {
+  const session = req.cookies.get('pa_session');
+  return !!session?.value;
+}
+
+// 内存限流
+const rateMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_WINDOW = 60 * 1000;
+const RATE_MAX = 10;
+
+function checkRateLimit(req: NextRequest): boolean {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+  const now = Date.now();
+  const record = rateMap.get(ip);
+  if (!record || now > record.resetAt) {
+    rateMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
+    return false;
+  }
+  if (record.count >= RATE_MAX) return true;
+  record.count++;
+  return false;
+}
+
 export async function POST(req: NextRequest) {
+  if (!verifySession(req)) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+  if (checkRateLimit(req)) {
+    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': '60' } });
+  }
   try {
     const formData = await req.formData();
     const userDocId = formData.get('user_doc_id') as string;

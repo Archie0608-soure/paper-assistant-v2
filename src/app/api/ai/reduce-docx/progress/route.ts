@@ -4,7 +4,15 @@ import WebSocket from 'ws';
 
 const SPEEDAI_API_KEY = process.env.SPEEDAI_API_KEY || 'sk-pPYJHnLpQq51mjzHrmSKJ43q';
 
+function verifySession(req: NextRequest): boolean {
+  const session = req.cookies.get('pa_session');
+  return !!session?.value;
+}
+
 export async function GET(req: NextRequest) {
+  if (!verifySession(req)) {
+    return new NextResponse('Unauthorized', { status: 401 });
+  }
   const { searchParams } = new URL(req.url);
   const docId = searchParams.get('doc_id');
 
