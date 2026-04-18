@@ -3005,7 +3005,7 @@ export default function Home() {
 
         {/* 降重降AI界面 */}
         {activeFeature === 'reduce' && (
-          <div className="relative z-10 w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+          <div className="relative z-10 w-full max-h-[calc(100vh-130px)] overflow-y-auto space-y-4 pb-4">
 
             {/* 四步流程指引 */}
             <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 p-5">
