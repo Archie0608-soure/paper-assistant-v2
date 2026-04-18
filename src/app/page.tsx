@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import mammoth from 'mammoth';
 import { useRouter } from 'next/navigation';
-import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload, Download, RotateCcw, Home as HomeIcon } from 'lucide-react';
+import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload, Download, RotateCcw, Home as HomeIcon, Copy, Coins, CheckCircle, AlertCircle } from 'lucide-react';
 import { exportToDocx } from '@/lib/docx';
 
 // 常见专业分类
@@ -223,6 +223,18 @@ export default function Home() {
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // 复习资料状态
+  const [reviewStep, setReviewStep] = useState<'upload' | 'preview' | 'result'>('upload');
+  const [reviewCourseName, setReviewCourseName] = useState('');
+  const [reviewExtractedText, setReviewExtractedText] = useState('');
+  const [reviewResult, setReviewResult] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewFileLoading, setReviewFileLoading] = useState(false);
+  const [reviewFileName, setReviewFileName] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [reviewCopied, setReviewCopied] = useState(false);
+  const reviewFileRef = useRef<HTMLInputElement>(null);
 
   // 生成模式: 人机协作 / 一键生成
   const [generateMode, setGenerateMode] = useState<'collaborate' | 'oneclick'>('collaborate');
@@ -1085,6 +1097,90 @@ export default function Home() {
     finally { setPptLoading(false); }
   };
 
+  // 复习资料：解析文件
+  const parseReviewFile = async (file: File): Promise<string> => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'txt' || ext === 'md') {
+      return await file.text();
+    }
+    if (ext === 'docx') {
+      const arrayBuffer = await file.arrayBuffer();
+      const { value } = await mammoth.extractRawText({ arrayBuffer });
+      return value;
+    }
+    throw new Error('仅支持 .txt .md .docx 格式（页面嵌入模式），如需解析PPT/PDF请前往复习资料页面');
+  };
+
+  // 复习资料：处理文件上传
+  const handleReviewFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setReviewFileName(file.name);
+    setReviewFileLoading(true);
+    setReviewError('');
+    try {
+      const text = await parseReviewFile(file);
+      if (!text.trim()) { throw new Error('无法从文件中提取文字内容'); }
+      setReviewExtractedText(text.slice(0, 8000));
+      setReviewStep('preview');
+    } catch (err: any) {
+      setReviewError(err.message || '文件解析失败');
+    } finally {
+      setReviewFileLoading(false);
+      if (reviewFileRef.current) reviewFileRef.current.value = '';
+    }
+  };
+
+  // 复习资料：生成
+  const handleReviewGenerate = async () => {
+    if (!reviewCourseName.trim()) { setReviewError('请输入课程名称'); return; }
+    if (!reviewExtractedText.trim()) { setReviewError('请先上传课程资料'); return; }
+    setReviewLoading(true);
+    setReviewError('');
+    setReviewStep('result');
+    try {
+      const res = await Promise.race([
+        fetch('/api/study/generate', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: reviewExtractedText, courseName: reviewCourseName }),
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 180000)),
+      ]) as Response;
+      const data = await res.json().catch(() => { throw new Error('服务器响应无效'); });
+      if (!res.ok) throw new Error(data.error || '生成失败');
+      setReviewResult(data.result || '');
+    } catch (err: any) {
+      if (err.message === 'TIMEOUT') {
+        setReviewError('生成超时（超过3分钟），请稍后重试');
+      } else {
+        setReviewError(err.message || '生成失败，请稍后重试');
+      }
+      setReviewStep('preview');
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  // 复习资料：复制
+  const handleReviewCopy = async () => {
+    try { await navigator.clipboard.writeText(reviewResult); setReviewCopied(true); setTimeout(() => setReviewCopied(false), 2000); } catch {}
+  };
+
+  // 复习资料：下载
+  const handleReviewDownload = () => {
+    const blob = new Blob([reviewResult], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${reviewCourseName || '复习资料'}_复习大纲.md`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  // 复习资料：重置
+  const handleReviewReset = () => {
+    setReviewCourseName(''); setReviewExtractedText(''); setReviewResult('');
+    setReviewFileName(''); setReviewError(''); setReviewStep('upload');
+  };
+
   // 翻译：处理文件上传
   const handleTranslateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1379,7 +1475,7 @@ export default function Home() {
           <span className="font-medium">降重降AI</span>
         </button>
         <button
-          onClick={() => router.push('/review')}
+          onClick={() => setActiveFeature('review')}
           className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
           <Brain className="w-5 h-5" />
@@ -1434,7 +1530,7 @@ export default function Home() {
               <span className="font-medium">降重降AI</span>
             </button>
             <button
-              onClick={() => router.push('/review')}
+              onClick={() => setActiveFeature('review')}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
               <Brain className="w-5 h-5" />
@@ -2573,6 +2669,145 @@ export default function Home() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* 复习资料界面 */}
+        {activeFeature === 'review' && (
+          <div className="w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+
+            {/* 步骤指示 */}
+            <div className="flex items-center justify-center gap-2 mb-2">
+              {['上传资料', '预览确认', '生成结果'].map((s, i) => {
+                const stepMap: Record<string, number> = { upload: 0, preview: 1, result: 2 };
+                const cur = stepMap[reviewStep];
+                return (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${cur >= i ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{i + 1}</div>
+                    <span className={`text-xs ${cur >= i ? 'text-indigo-600 font-medium' : 'text-slate-400'}`}>{s}</span>
+                    {i < 2 && <div className={`w-8 h-px mx-1 ${cur > i ? 'bg-indigo-300' : 'bg-slate-200'}`} />}
+                  </div>
+                );
+              })}
+            </div>
+
+            {reviewError && (
+              <div className="flex items-start gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{reviewError}</span>
+              </div>
+            )}
+
+            {/* 步骤1: 上传 */}
+            {reviewStep === 'upload' && (
+              <div className="space-y-3">
+                <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                  <h3 className="text-sm font-semibold text-slate-800 mb-3">输入课程名称</h3>
+                  <input type="text" value={reviewCourseName} onChange={e => setReviewCourseName(e.target.value)}
+                    placeholder="例如：计算机网络、数据结构、宏观经济学"
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                  <h3 className="text-sm font-semibold text-slate-800 mb-2">上传课程资料</h3>
+                  <p className="text-xs text-slate-500 mb-3">支持 TXT、Word（.docx）格式，推荐上传PPT课件或PDF</p>
+                  <input ref={reviewFileRef} type="file" accept=".txt,.docx,.md"
+                    onChange={handleReviewFileUpload} className="hidden" />
+                  <button onClick={() => reviewFileRef.current?.click()} disabled={reviewFileLoading}
+                    className="w-full py-6 border-2 border-dashed border-indigo-300 rounded-xl flex flex-col items-center gap-2 hover:border-indigo-500 hover:bg-indigo-50/50 transition disabled:opacity-50 cursor-pointer">
+                    {reviewFileLoading ? (
+                      <><Loader2 className="w-8 h-8 text-indigo-400 animate-spin" /><p className="text-sm text-slate-500">正在解析文件...</p></>
+                    ) : (
+                      <><Upload className="w-8 h-8 text-indigo-400" /><p className="text-sm text-slate-500">点击上传课程资料</p><p className="text-xs text-slate-400">TXT · DOCX · MD</p></>
+                    )}
+                  </button>
+                  {reviewFileName && !reviewFileLoading && (
+                    <p className="mt-2 text-sm text-green-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" />已选择: {reviewFileName}</p>
+                  )}
+                </div>
+
+                <div className="bg-amber-50 rounded-xl p-3 border border-amber-100 flex items-start gap-2">
+                  <Coins className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800">
+                    <span className="font-semibold">生成费用：40金币/次</span>
+                    <p className="mt-0.5 text-amber-700">包含：核心知识点 · 名词解释 · 简答题 · 填空题 · 知识框架图</p>
+                  </div>
+                </div>
+
+                <button onClick={() => reviewExtractedText ? setReviewStep('preview') : null}
+                  disabled={!reviewExtractedText || !reviewCourseName.trim()}
+                  className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                  下一步：预览内容
+                </button>
+              </div>
+            )}
+
+            {/* 步骤2: 预览 */}
+            {reviewStep === 'preview' && (
+              <div className="space-y-3">
+                <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-slate-800">确认课程资料</h3>
+                    <span className="text-xs text-slate-400">{reviewCourseName} ({reviewExtractedText.length}字)</span>
+                  </div>
+                  <textarea value={reviewExtractedText}
+                    onChange={e => setReviewExtractedText(e.target.value.slice(0, 8000))}
+                    className="w-full h-48 px-3 py-2 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 resize-none"
+                    placeholder="从文件中提取的文字会显示在这里，可以手动编辑删减..." />
+                  <p className="mt-1 text-xs text-slate-400 text-right">最多8000字</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => setReviewStep('upload')}
+                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-200 transition">上一步</button>
+                  <button onClick={handleReviewGenerate} disabled={reviewLoading}
+                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+                    {reviewLoading ? <><Loader2 className="w-4 h-4 animate-spin" />生成中...</> : '🚀 开始生成复习资料（40金币）'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 步骤3: 结果 */}
+            {reviewStep === 'result' && (
+              <div className="space-y-3">
+                {reviewLoading && (
+                  <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 text-center">
+                    <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mx-auto mb-3" />
+                    <p className="text-slate-600 font-medium mb-1">正在生成复习资料...</p>
+                    <p className="text-xs text-slate-400">预计需要10-30秒，请稍候</p>
+                  </div>
+                )}
+
+                {!reviewLoading && reviewResult && (
+                  <>
+                    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-slate-800">📚 {reviewCourseName} 复习资料</h3>
+                        <div className="flex items-center gap-2">
+                          <button onClick={handleReviewCopy}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition">
+                            {reviewCopied ? <><CheckCircle className="w-3.5 h-3.5" />已复制</> : <><Copy className="w-3.5 h-3.5" />复制</>}
+                          </button>
+                          <button onClick={handleReviewDownload}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition">
+                            <Download className="w-3.5 h-3.5" />下载
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="whitespace-pre-wrap text-sm text-slate-700 font-mono leading-relaxed bg-slate-50 p-4 rounded-xl overflow-auto max-h-80">
+                        {reviewResult}
+                      </pre>
+                    </div>
+
+                    <button onClick={handleReviewReset}
+                      className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-200 transition">
+                      🆕 生成新的复习资料
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
