@@ -236,6 +236,21 @@ export default function Home() {
   const [reviewCopied, setReviewCopied] = useState(false);
   const reviewFileRef = useRef<HTMLInputElement>(null);
 
+  // 降重降AI状态（docx流程）
+  const [reduceDocxFile, setReduceDocxFile] = useState<File | null>(null);
+  const [reduceDocxStep, setReduceDocxStep] = useState<'idle' | 'confirm' | 'processing' | 'done' | 'error'>('idle');
+  const [reduceSessionId, setReduceSessionId] = useState('');
+  const [reduceCost, setReduceCost] = useState<number | null>(null);
+  const [reduceCharCount, setReduceCharCount] = useState(0);
+  const [reduceProgress, setReduceProgress] = useState(0);
+  const [reduceStatusMsg, setReduceStatusMsg] = useState('');
+  const [reduceError, setReduceError] = useState('');
+  const [reduceDownloadUrl, setReduceDownloadUrl] = useState('');
+  const [reduceDownloadName, setReduceDownloadName] = useState('');
+  const [reduceParsing, setReduceParsing] = useState(false);
+  const reduceFileRef = useRef<HTMLInputElement>(null);
+  const reduceEventSourceRef = useRef<EventSource | null>(null);
+
   // 生成模式: 人机协作 / 一键生成
   const [generateMode, setGenerateMode] = useState<'collaborate' | 'oneclick'>('collaborate');
 
@@ -1181,6 +1196,155 @@ export default function Home() {
     setReviewFileName(''); setReviewError(''); setReviewStep('upload');
   };
 
+  // 降重降AI：文件上传
+  const handleReduceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.docx')) {
+      setReduceError('仅支持 .docx 格式（Word 2007+），请将文档另存为 .docx 格式后重试');
+      e.target.value = ''; return;
+    }
+    setReduceDocxFile(file);
+    setReduceDocxStep('idle');
+    setReduceError('');
+    setReduceDownloadUrl('');
+    setReduceParsing(true);
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('lang', reduceLang);
+    fd.append('platform', reducePlatform);
+
+    try {
+      const res = await fetch('/api/ai/reduce-docx/cost', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '提交失败');
+      setReduceSessionId(data.sessionId);
+      setReduceCost(data.cost);
+      setReduceCharCount(data.charCount || 0);
+      setReduceDocxStep('confirm');
+      setReduceParsing(false);
+    } catch (err: any) {
+      setReduceDocxStep('error');
+      setReduceError(err.message || '提交失败，请稍后重试');
+      setReduceParsing(false);
+    }
+    e.target.value = '';
+  };
+
+  // 降重降AI：确认开始处理
+  const handleReduceStart = async () => {
+    if (!reduceDocxFile || !reduceSessionId) return;
+    setReduceDocxStep('processing');
+    setReduceProgress(5);
+    setReduceStatusMsg('正在提交文档...');
+    setReduceError('');
+    try {
+      const res = await fetch('/api/ai/reduce-docx/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: reduceSessionId, lang: reduceLang, platform: reducePlatform }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '启动处理失败');
+      setReduceProgress(10);
+      setReduceStatusMsg('已提交，等待处理...');
+      subscribeReduceProgress(data.docId);
+    } catch (err: any) {
+      setReduceDocxStep('error');
+      setReduceError(err.message || '启动失败');
+    }
+  };
+
+  // 降重降AI：SSE订阅进度
+  const subscribeReduceProgress = (docId: string) => {
+    const es = new EventSource(`/api/ai/reduce-docx/progress?doc_id=${encodeURIComponent(docId)}`);
+    reduceEventSourceRef.current = es;
+    es.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        const t = msg.type;
+        if (t === 'connected' || t === 'ping' || t === 'pong') return;
+        if (t === 'progress') {
+          setReduceProgress(Math.min(Math.round((msg.progress || 0) * 0.8 + 10), 90));
+          setReduceStatusMsg(msg.stage || `处理中... ${Math.round(msg.progress || 0)}%`);
+        }
+        if (t === 'stage') setReduceStatusMsg(msg.stage || '处理中...');
+        if (t === 'need_pay') { es.close(); setReduceDocxStep('error'); setReduceError('点数不足，请充值后重试'); }
+        if (t === 'error') { es.close(); setReduceDocxStep('error'); setReduceError(msg.error || '处理失败'); }
+        if (t === 'completed') {
+          es.close(); reduceEventSourceRef.current = null;
+          setReduceProgress(85);
+          setReduceStatusMsg('处理完成，正在下载...');
+          downloadReduceFile(docId).then(({ url, name }) => {
+            setReduceDownloadUrl(url); setReduceDownloadName(name);
+            setReduceDocxStep('done'); setReduceProgress(100); setReduceStatusMsg('处理完成！');
+          }).catch((err: any) => { setReduceDocxStep('error'); setReduceError(err.message || '文件下载失败'); });
+        }
+      } catch {}
+    };
+    es.onerror = () => {
+      es.close(); reduceEventSourceRef.current = null;
+      setReduceStatusMsg('连接中断，切换为轮询...');
+      pollReduceFallback(docId);
+    };
+  };
+
+  // 降重降AI：轮询fallback
+  const pollReduceFallback = async (docId: string) => {
+    for (let i = 0; i < 120; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const fd = new FormData(); fd.append('user_doc_id', docId);
+        const res = await fetch(`https://api3.speedai.chat/v1/docx/status`, { method: 'POST', body: fd });
+        const data = await res.json();
+        setReduceProgress(Math.min(10 + Math.round(i / 120 * 75), 85));
+        setReduceStatusMsg(`处理中... ${data.progress || Math.round(i / 120 * 100)}%`);
+        if (data.status === 'completed') {
+          setReduceProgress(85);
+          downloadReduceFile(docId).then(({ url, name }) => {
+            setReduceDownloadUrl(url); setReduceDownloadName(name);
+            setReduceDocxStep('done'); setReduceProgress(100); setReduceStatusMsg('处理完成！');
+          }); return;
+        }
+        if (data.status === 'error' || data.status === 'need_pay') {
+          setReduceDocxStep('error');
+          setReduceError(data.error || (data.status === 'need_pay' ? '点数不足' : '处理失败'));
+          return;
+        }
+      } catch {}
+    }
+    setReduceDocxStep('error'); setReduceError('处理超时');
+  };
+
+  // 降重降AI：下载文件
+  const downloadReduceFile = async (docId: string): Promise<{ url: string; name: string }> => {
+    if (!reduceDocxFile) throw new Error('文件丢失');
+    const outName = reduceDocxFile.name.replace(/\.(docx|doc)$/i, '_降AI.docx');
+    const fd = new FormData();
+    fd.append('user_doc_id', docId);
+    fd.append('file_name', outName.replace(/\.docx$/, ''));
+    const res = await fetch('/api/ai/reduce-docx/download', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || '下载失败');
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), name: outName };
+  };
+
+  // 降重降AI：触发下载
+  const handleReduceDownload = () => {
+    if (!reduceDownloadUrl) return;
+    const a = document.createElement('a');
+    a.href = reduceDownloadUrl; a.download = reduceDownloadName; a.click();
+  };
+
+  // 降重降AI：重置
+  const handleReduceReset = () => {
+    setReduceDocxFile(null); setReduceDocxStep('idle'); setReduceSessionId('');
+    setReduceCost(null); setReduceCharCount(0); setReduceProgress(0);
+    setReduceStatusMsg(''); setReduceError(''); setReduceDownloadUrl('');
+    setReduceDownloadName('');
+  };
+
   // 翻译：处理文件上传
   const handleTranslateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1300,7 +1464,11 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen select-none animate-aurora">
+    <div className="min-h-screen select-none animate-aurora relative">
+      {/* 降重降AI背景渐变叠加层（切换时动画过渡） */}
+      <div
+        className={`absolute inset-0 z-0 pointer-events-none transition-opacity duration-700 ${activeFeature === 'reduce' ? 'opacity-100 bg-gradient-to-br from-rose-100 via-orange-50 to-emerald-100' : 'opacity-0'}`}
+      />
       {/* 顶部 Header */}
       <header className="bg-[#7c3aed] sticky top-0 z-50 shadow-md">
         <div className="max-w-6xl mx-auto px-6 py-4">
@@ -1468,7 +1636,7 @@ export default function Home() {
           <span className="font-medium">AI PPT</span>
         </button>
         <button
-          onClick={() => router.push('/reduce')}
+          onClick={() => setActiveFeature('reduce')}
           className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
           <Scale className="w-5 h-5" />
@@ -1523,7 +1691,7 @@ export default function Home() {
               <span className="font-medium">AI PPT</span>
             </button>
             <button
-              onClick={() => router.push('/reduce')}
+              onClick={() => setActiveFeature('reduce')}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
               <Scale className="w-5 h-5" />
@@ -2808,6 +2976,164 @@ export default function Home() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* 降重降AI界面 */}
+        {activeFeature === 'reduce' && (
+          <div className="relative z-10 w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+            <div className="bg-white/95 rounded-2xl shadow-lg border border-slate-200/60 p-6 backdrop-blur-sm">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
+                  <Scale className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">降重降AI</h3>
+                  <p className="text-xs text-slate-500">上传论文文档，一键降低重复率 & AI率</p>
+                </div>
+              </div>
+
+              {/* 模式选择 */}
+              <div className="mb-4">
+                <label className="text-sm font-semibold text-slate-800 block mb-2">处理模式</label>
+                <div className="flex gap-2">
+                  {[{ id: 'both', label: '双降', color: 'from-amber-400 to-orange-500' }, { id: 'plagiarism', label: '仅降重', color: 'from-blue-400 to-indigo-500' }, { id: 'ai', label: '仅降AI', color: 'from-emerald-400 to-teal-500' }].map(m => (
+                    <button key={m.id}
+                      onClick={() => setReduceMode(m.id as any)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all ${reduceMode === m.id ? `bg-gradient-to-r ${m.color} text-white shadow` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 语言 + 平台 */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">语言</label>
+                  <div className="flex gap-1">
+                    {[{ id: 'chinese', label: '中文' }, { id: 'english', label: '英文' }].map(l => (
+                      <button key={l.id} onClick={() => { setReduceLang(l.id as any); setReducePlatform(l.id === 'chinese' ? 'zhiwang' : 'zhiwang'); }}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${reduceLang === l.id ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{l.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">检测平台</label>
+                  <select value={reducePlatform} onChange={e => setReducePlatform(e.target.value)}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-400">
+                    {reduceLang === 'chinese'
+                      ? <><option value="zhiwang">知网</option><option value="vip">维普</option><option value="gezida">格子达</option><option value="daya">大雅</option><option value="wanfang">万方</option></>
+                      : <><option value="zhiwang">知网</option><option value="vip">维普</option><option value="turnitin">Turnitin</option></>
+                    }
+                  </select>
+                </div>
+              </div>
+
+              {/* 费用说明 */}
+              <div className="bg-amber-50 rounded-xl p-3 mb-4 border border-amber-100 flex items-start gap-2">
+                <Coins className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <span className="font-semibold">计费：{Math.ceil(reduceCharCount / 1000) * 20}金币</span>
+                  <p className="mt-0.5 text-amber-700">字数：{reduceCharCount} · 知网/维普/格子达/大雅/万方</p>
+                </div>
+              </div>
+
+              {/* 文件上传 */}
+              {reduceDocxStep === 'idle' && (
+                <div>
+                  <input ref={reduceFileRef} type="file" accept=".docx"
+                    onChange={handleReduceFileUpload} className="hidden" />
+                  <button onClick={() => reduceFileRef.current?.click()} disabled={reduceParsing}
+                    className="w-full py-8 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center gap-2 hover:border-indigo-400 hover:bg-indigo-50/30 transition disabled:opacity-50 cursor-pointer">
+                    {reduceParsing ? (
+                      <><Loader2 className="w-8 h-8 text-indigo-400 animate-spin" /><p className="text-sm text-slate-500">正在解析文档...</p></>
+                    ) : (
+                      <><Upload className="w-8 h-8 text-slate-400" /><p className="text-sm text-slate-500">点击上传 Word 文档（.docx）</p><p className="text-xs text-slate-400">仅支持 Word 2007+ 格式（.docx）</p></>
+                    )}
+                  </button>
+                  {reduceDocxFile && !reduceParsing && (
+                    <p className="mt-2 text-sm text-green-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" />已选择: {reduceDocxFile.name}</p>
+                  )}
+                </div>
+              )}
+
+              {/* 确认界面 */}
+              {reduceDocxStep === 'confirm' && reduceDocxFile && (
+                <div className="space-y-3">
+                  <div className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-indigo-500" />
+                      <span className="text-sm font-semibold text-slate-800">{reduceDocxFile.name}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{reduceCharCount} 字</span>
+                      <span className="text-amber-600 font-semibold">{reduceCost} 金币</span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full" style={{ width: '100%' }} />
+                    </div>
+                    <p className="text-xs text-indigo-600 mt-1.5 font-medium">{reduceMode === 'both' ? '降重 + 降AI' : reduceMode === 'plagiarism' ? '仅降重' : '仅降AI'} · {reduceLang === 'chinese' ? '中文' : '英文'} · {reducePlatform === 'zhiwang' ? '知网' : reducePlatform}</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={handleReduceReset}
+                      className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-200 transition">重新选择</button>
+                    <button onClick={handleReduceStart}
+                      className="flex-1 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl text-sm font-semibold shadow hover:shadow-lg transition flex items-center justify-center gap-2">
+                      <SparklesIcon className="w-4 h-4" />确认开始处理
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 处理中 */}
+              {reduceDocxStep === 'processing' && (
+                <div className="space-y-4 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-indigo-700">{reduceStatusMsg || '处理中...'}</p>
+                      <div className="mt-2 h-2 bg-indigo-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full transition-all duration-500"
+                          style={{ width: `${reduceProgress}%` }} />
+                      </div>
+                      <p className="text-xs text-indigo-500 mt-1">{reduceProgress}%</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 text-center">预计需30秒~3分钟，请勿关闭页面</p>
+                </div>
+              )}
+
+              {/* 完成 */}
+              {reduceDocxStep === 'done' && (
+                <div className="space-y-3">
+                  <div className="p-5 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl text-center">
+                    <p className="text-base font-bold text-green-700 mb-1">✅ 处理完成！</p>
+                    <p className="text-xs text-green-500 mb-3">文件已生成，可直接下载</p>
+                    <button onClick={handleReduceDownload}
+                      className="px-6 py-3 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition shadow flex items-center justify-center gap-2 mx-auto">
+                      <Download className="w-4 h-4" />下载降AI文档
+                    </button>
+                  </div>
+                  <button onClick={handleReduceReset}
+                    className="w-full py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition flex items-center justify-center gap-2">
+                    <RotateCcw className="w-4 h-4" />处理新的文档
+                  </button>
+                </div>
+              )}
+
+              {/* 错误 */}
+              {reduceDocxStep === 'error' && reduceError && (
+                <div className="flex items-start gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{reduceError}</span>
+                </div>
+              )}
+              {reduceDocxStep === 'error' && (
+                <button onClick={handleReduceReset}
+                  className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-200 transition">重新上传</button>
+              )}
+            </div>
           </div>
         )}
 
