@@ -3007,10 +3007,10 @@ export default function Home() {
         {activeFeature === 'reduce' && (
           <div className="relative z-10 w-full max-h-[calc(100vh-130px)] overflow-y-auto space-y-4 pb-4">
 
-            {/* 四步流程指引 */}
-            <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 p-5">
-              <p className="text-sm font-semibold text-slate-700 mb-4 text-center">简单四步，快速降低论文重复率 & AI率</p>
-              <div className="flex items-center justify-between gap-2">
+            {/* 四步流程指引（无背景卡片，自然融入页面） */}
+            <div className="flex flex-col items-center gap-3 py-2">
+              <p className="text-sm font-semibold text-slate-600">简单四步，快速降低论文重复率 & AI率</p>
+              <div className="flex items-center justify-between w-full max-w-2xl">
                 {[
                   { step: 1, icon: '📄', label: '上传文档', desc: 'Word .docx' },
                   { step: 2, icon: '⚙️', label: '选择模式', desc: '单降/双降' },
@@ -3020,12 +3020,12 @@ export default function Home() {
                   <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
                     {/* 连接线 */}
                     {idx < 3 && (
-                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-gradient-to-r from-orange-200 via-pink-200 to-rose-200 -z-0" style={{width: 'calc(100% - 2rem)', left: 'calc(50% + 1rem)'}} />
+                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-gradient-to-r from-orange-300 via-pink-300 to-rose-300 -z-0" style={{width: 'calc(100% - 3rem)', left: 'calc(50% + 1.5rem)'}} />
                     )}
-                    <div className="relative z-10 w-12 h-12 bg-gradient-to-br from-orange-300 via-pink-300 to-rose-300 rounded-2xl flex items-center justify-center text-xl shadow-lg shadow-rose-100 mb-2">
+                    <div className="relative z-10 w-10 h-10 bg-gradient-to-br from-orange-300 via-pink-300 to-rose-300 rounded-full flex items-center justify-center text-lg shadow-md">
                       {item.icon}
                     </div>
-                    <p className="text-xs font-semibold text-slate-800">{item.label}</p>
+                    <p className="text-xs font-semibold text-slate-700 mt-1.5">{item.label}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{item.desc}</p>
                   </div>
                 ))}
