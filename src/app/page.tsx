@@ -3032,6 +3032,7 @@ export default function Home() {
                       : [
                           { id: 'zhiwang', label: '知网', color: 'bg-orange-50 border-orange-200 text-orange-700 active:ring-orange-400', active: 'bg-gradient-to-br from-orange-400 to-red-500 text-white shadow-orange-200 shadow' },
                           { id: 'vip', label: '维普', color: 'bg-blue-50 border-blue-200 text-blue-700 active:ring-blue-400', active: 'bg-gradient-to-br from-blue-400 to-indigo-500 text-white shadow-blue-200 shadow' },
+                          { id: 'gezida', label: '格子达', color: 'bg-purple-50 border-purple-200 text-purple-700 active:ring-purple-400', active: 'bg-gradient-to-br from-purple-400 to-pink-500 text-white shadow-purple-200 shadow' },
                           { id: 'turnitin', label: 'Turnitin', color: 'bg-red-50 border-red-200 text-red-700 active:ring-red-400', active: 'bg-gradient-to-br from-red-400 to-orange-500 text-white shadow-red-200 shadow' },
                         ]
                     ).map(p => (
@@ -3045,14 +3046,16 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 费用说明 */}
-              <div className="bg-amber-50 rounded-xl p-3 mb-4 border border-amber-100 flex items-start gap-2">
-                <Coins className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-800">
-                  <span className="font-semibold">计费：{Math.ceil(reduceCharCount / 1000) * 20}金币</span>
-                  <p className="mt-0.5 text-amber-700">字数：{reduceCharCount} · 知网/维普/格子达/大雅/万方</p>
+              {/* 费用说明（idle状态显示，确认后由确认卡片展示） */}
+              {reduceDocxStep === 'idle' && (
+                <div className="bg-amber-50 rounded-xl p-3 mb-4 border border-amber-100 flex items-start gap-2">
+                  <Coins className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800">
+                    <span className="font-semibold">计费：{reduceCost != null ? `${reduceCost} 金币` : `${Math.ceil(reduceCharCount / 1000) * 20} 金币（预估）`}</span>
+                    <p className="mt-0.5 text-amber-700">字数：{reduceCharCount} · 知网/维普/格子达/大雅/万方</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 文件上传 */}
               {reduceDocxStep === 'idle' && (
