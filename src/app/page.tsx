@@ -1212,7 +1212,6 @@ export default function Home() {
 
     const fd = new FormData();
     fd.append('file', file);
-    fd.append('lang', reduceLang);
     fd.append('platform', reducePlatform);
     fd.append('mode', reduceMode);
 
@@ -1223,6 +1222,7 @@ export default function Home() {
       setReduceSessionId(data.sessionId);
       setReduceCost(data.cost);
       setReduceCharCount(data.charCount || 0);
+      if (data.detectedLang) setReduceLang(data.detectedLang);
       setReduceDocxStep('confirm');
       setReduceParsing(false);
     } catch (err: any) {

@@ -43,24 +43,28 @@ export async function POST(req: NextRequest) {
 
     // 读取并暂存文件（不上传到 SpeedAI）
     const buffer = Buffer.from(await file.arrayBuffer());
-    const charCount = await countChars(buffer);
+    const { charCount, detectedLang } = await countChars(buffer);
+
+    // 首次上传（lang=chinese默认值）时用检测到的语言；后续重选语言时用用户指定的
+    const effectiveLang = lang === 'chinese' || lang === 'english' ? lang : detectedLang;
 
     fileStore.set(sessionId, {
       buffer,
       fileName: file.name,
-      lang,
+      lang: effectiveLang,
       platform,
       mode,
       createdAt: Date.now(),
     });
 
-    const ourCoins = calcCoins(charCount || 1000, lang, mode);
-    console.log(`[/reduce-docx/cost] 字符数=${charCount}，金币=${ourCoins}，mode=${mode}，lang=${lang}，sessionId=${sessionId}`);
+    const ourCoins = calcCoins(charCount || 1000, effectiveLang, mode);
+    console.log(`[/reduce-docx/cost] 字符数=${charCount}，金币=${ourCoins}，mode=${mode}，lang=${effectiveLang}(检测:${detectedLang})，sessionId=${sessionId}`);
 
     return NextResponse.json({
       sessionId,
       cost: ourCoins,
       charCount,
+      detectedLang: effectiveLang,
     });
 
   } catch (err: any) {
@@ -69,15 +73,21 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function countChars(buffer: Buffer): Promise<number> {
+async function countChars(buffer: Buffer): Promise<{ charCount: number; detectedLang: string }> {
+  let text = '';
   try {
     const zip = await JSZip.loadAsync(buffer);
     const docEntry = zip.file('word/document.xml');
     if (docEntry) {
       const xml = await docEntry.async('string');
-      const text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      return text.length;
+      text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     }
   } catch {}
-  return 0;
+
+  // 语言检测：统计中文字符数 vs 英文字符数
+  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  const englishChars = (text.match(/[a-zA-Z]/g) || []).length;
+  const detectedLang = chineseChars >= englishChars ? 'chinese' : 'english';
+
+  return { charCount: text.length, detectedLang };
 }
