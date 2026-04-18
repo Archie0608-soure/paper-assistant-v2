@@ -3017,49 +3017,33 @@ export default function Home() {
           </div>
         )}
 
-        {/* 四步流程指引（始终显示，随背景变色） */}
-        <div className="flex flex-col items-center gap-3">
-          <p className={`text-sm font-semibold transition-colors duration-700 ${
-            activeFeature === 'reduce' ? 'text-slate-600' :
-            activeFeature === 'translate' ? 'text-slate-600' :
-            activeFeature === 'ppt' ? 'text-slate-600' :
-            activeFeature === 'generate' ? 'text-slate-600' :
-            activeFeature === 'review' ? 'text-slate-600' :
-            activeFeature === 'search' ? 'text-slate-600' : 'text-white'
-          }`}>简单四步，快速降低论文重复率 & AI率</p>
-          <div className="flex items-center justify-between w-full max-w-2xl">
-            {[
-              { step: 1, label: '上传文档', desc: 'Word .docx' },
-              { step: 2, label: '选择模式', desc: '单降/双降' },
-              { step: 3, label: '智能处理', desc: '30秒~3分钟' },
-              { step: 4, label: '下载结果', desc: '即刻使用' },
-            ].map((item, idx) => (
-              <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
-                {idx < 3 && (
-                  <div className={`absolute top-5 left-1/2 w-full h-0.5 -z-0 transition-colors duration-700 ${
-                    activeFeature === 'reduce' || activeFeature === 'translate' || activeFeature === 'ppt' || activeFeature === 'generate' || activeFeature === 'review' || activeFeature === 'search' ? 'bg-slate-300' : 'bg-white/40'
-                  }`} style={{width: 'calc(100% - 3rem)', left: 'calc(50% + 1.5rem)'}} />
-                )}
-                <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm border-2 transition-colors duration-700 ${
-                  activeFeature === 'reduce' || activeFeature === 'translate' || activeFeature === 'ppt' || activeFeature === 'generate' || activeFeature === 'review' || activeFeature === 'search'
-                    ? 'bg-white border-indigo-400 text-indigo-600' : 'bg-white/90 border-white text-white'
-                }`}>
-                  {item.step}
-                </div>
-                <p className={`text-xs font-semibold mt-1.5 transition-colors duration-700 ${
-                  activeFeature === 'reduce' || activeFeature === 'translate' || activeFeature === 'ppt' || activeFeature === 'generate' || activeFeature === 'review' || activeFeature === 'search' ? 'text-slate-700' : 'text-white'
-                }`}>{item.label}</p>
-                <p className={`text-xs mt-0.5 transition-colors duration-700 ${
-                  activeFeature === 'reduce' || activeFeature === 'translate' || activeFeature === 'ppt' || activeFeature === 'generate' || activeFeature === 'review' || activeFeature === 'search' ? 'text-slate-400' : 'text-white/60'
-                }`}>{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* 降重降AI界面 */}
         {activeFeature === 'reduce' && (
           <div className="relative z-10 w-full max-h-[calc(100vh-130px)] overflow-y-auto space-y-4 pb-4">
+
+            {/* 四步流程指引 */}
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm font-semibold text-slate-600">简单四步，快速降低论文重复率 & AI率</p>
+              <div className="flex items-center justify-between w-full max-w-2xl">
+                {[
+                  { step: 1, label: '上传文档', desc: 'Word .docx' },
+                  { step: 2, label: '选择模式', desc: '单降/双降' },
+                  { step: 3, label: '智能处理', desc: '30秒~3分钟' },
+                  { step: 4, label: '下载结果', desc: '即刻使用' },
+                ].map((item, idx) => (
+                  <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
+                    {idx < 3 && (
+                      <div className="absolute top-5 left-1/2 w-full h-0.5 bg-slate-200 -z-0" style={{width: 'calc(100% - 3rem)', left: 'calc(50% + 1.5rem)'}} />
+                    )}
+                    <div className="relative z-10 w-10 h-10 bg-white border-2 border-indigo-400 rounded-full flex items-center justify-center text-sm font-bold text-indigo-600 shadow-sm">
+                      {item.step}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-700 mt-1.5">{item.label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div className={`rounded-2xl shadow-lg border p-6 backdrop-blur-sm transition-all duration-700 ${
               activeFeature === 'reduce'
