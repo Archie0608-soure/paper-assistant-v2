@@ -3021,9 +3021,11 @@ export default function Home() {
         {activeFeature === 'reduce' && (
           <div className="relative z-10 w-full max-h-[calc(100vh-130px)] overflow-y-auto space-y-4 pb-4">
 
-            {/* 四步流程指引（四个白色圆圈，无大卡片背景） */}
+            {/* 四步流程指引（随背景变色） */}
             <div className="flex flex-col items-center gap-3">
-              <p className={`text-sm font-semibold transition-colors duration-700 ${activeFeature === 'reduce' ? 'text-slate-600' : 'text-white'}`}>简单四步，快速降低论文重复率 & AI率</p>
+              <p className={`text-sm font-semibold transition-colors duration-700 ${
+                activeFeature === 'reduce' ? 'text-slate-600' : 'text-white'
+              }`}>简单四步，快速降低论文重复率 & AI率</p>
               <div className="flex items-center justify-between w-full max-w-2xl">
                 {[
                   { step: 1, label: '上传文档', desc: 'Word .docx' },
@@ -3032,7 +3034,6 @@ export default function Home() {
                   { step: 4, label: '下载结果', desc: '即刻使用' },
                 ].map((item, idx) => (
                   <div key={item.step} className="flex-1 flex flex-col items-center text-center relative">
-                    {/* 连接线 */}
                     {idx < 3 && (
                       <div className="absolute top-5 left-1/2 w-full h-0.5 bg-slate-200 -z-0" style={{width: 'calc(100% - 3rem)', left: 'calc(50% + 1.5rem)'}} />
                     )}
@@ -3054,7 +3055,7 @@ export default function Home() {
                 : 'bg-white/95 border-slate-200/60'
             }`}>
               <div className="flex items-center gap-3 mb-5">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${activeFeature === 'reduce' ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}>
+                <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
                   <Scale className="w-5 h-5 text-white" />
                 </div>
                 <div>
