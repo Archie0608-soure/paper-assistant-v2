@@ -1702,42 +1702,42 @@ export default function Home() {
             </button>
             <button
               onClick={() => setActiveFeature('translate')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'translate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Languages className="w-5 h-5" />
               <span className="font-medium">论文翻译</span>
             </button>
             <button
               onClick={() => setActiveFeature('ppt')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Presentation className="w-5 h-5" />
               <span className="font-medium">AI PPT</span>
             </button>
             <button
               onClick={() => setActiveFeature('reduce')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Scale className="w-5 h-5" />
               <span className="font-medium">降重降AI</span>
             </button>
             <button
               onClick={() => setActiveFeature('review')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'review' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Brain className="w-5 h-5" />
               <span className="font-medium">复习资料</span>
             </button>
             <button
               onClick={() => setActiveFeature('search')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'search' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'search' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Library className="w-5 h-5" />
               <span className="font-medium">文献搜索</span>
             </button>
             <button
               onClick={() => setActiveFeature('agent')}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'agent' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
               <Bot className="w-5 h-5" />
               <span className="font-medium">科研智能体</span>
