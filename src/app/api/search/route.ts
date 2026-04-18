@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifySession } from '@/lib/apiAuth';
 
 interface Paper {
   title: string;
@@ -205,6 +206,8 @@ export async function searchAcademicPapers(query: string, limit: number = 100): 
 
 // ─── API handler ────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const check = verifySession(req);
+  if (!check.ok) return check.response;
   try {
     const { query, limit } = await req.json();
     if (!query) {

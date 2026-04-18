@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifySession } from '@/lib/apiAuth';
 
 // SiliconFlow API (兼容 OpenAI 格式)
 const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
@@ -25,6 +26,8 @@ interface ClassifyResult {
 }
 
 export async function POST(req: NextRequest) {
+  const check = verifySession(req);
+  if (!check.ok) return check.response;
   try {
     const { chapters, language } = await req.json() as ClassifyRequest;
 

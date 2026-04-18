@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifySession } from '@/lib/apiAuth';
 
 export async function POST(req: NextRequest) {
+  const check = verifySession(req);
+  if (!check.ok) return check.response;
   try {
     const { content, action } = await req.json();
 

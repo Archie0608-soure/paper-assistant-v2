@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pptxgen from 'pptxgenjs';
 import fs from 'fs';
 import path from 'path';
+import { verifySession } from '@/lib/apiAuth';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-deb255ccb90b4381baf2d84398480cc1';
 
@@ -113,6 +114,8 @@ function addBulletPoints(slide: any, content: string, x: number, y: number, w: n
 }
 
 export async function POST(req: NextRequest) {
+  const check = verifySession(req);
+  if (!check.ok) return check.response;
   try {
     const { title, name, school, keywords, pages = 10, customChapters, templateId } = await req.json();
     if (!title) return NextResponse.json({ error: '缺少论文标题' }, { status: 400 });
