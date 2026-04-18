@@ -46,6 +46,18 @@ export default function Home() {
   const router = useRouter();
   // ===== 登录状态 =====
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+  // 登录拦截：未登录则弹窗，已登录则执行
+  const requireLogin = (action: () => void) => {
+    if (isLoggedIn) {
+      action();
+    } else {
+      setPendingAction(() => action);
+      setShowLoginModal(true);
+    }
+  };
 
   useEffect(() => {
     const checkSession = async () => {
@@ -55,6 +67,8 @@ export default function Home() {
           const data = await res.json();
           if (data.loggedIn) {
             setIsLoggedIn(true);
+            setShowLoginModal(false);
+            if (pendingAction) { pendingAction(); setPendingAction(null); }
             // 加载账户信息和签到信息
             const [accountRes, signInRes] = await Promise.all([
               fetch('/api/account'),
@@ -323,6 +337,8 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '登录失败');
       setIsLoggedIn(true);
+      setShowLoginModal(false);
+      if (pendingAction) { pendingAction(); setPendingAction(null); }
       // 加载账户信息和签到信息
       const [accountRes, signInRes] = await Promise.all([
         fetch('/api/account'),
@@ -360,6 +376,8 @@ export default function Home() {
         setNeedsPassword(true);
       } else {
         setIsLoggedIn(true);
+        setShowLoginModal(false);
+        if (pendingAction) { pendingAction(); setPendingAction(null); }
         // 加载账户信息和签到信息
         const [accountRes, signInRes] = await Promise.all([
           fetch('/api/account'),
@@ -505,6 +523,8 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error);
       setNeedsPassword(false);
       setIsLoggedIn(true);
+      setShowLoginModal(false);
+      if (pendingAction) { pendingAction(); setPendingAction(null); }
     } catch (err: any) { alert(err.message || '设置失败'); }
   };
 
@@ -531,168 +551,6 @@ export default function Home() {
       alert(err.message || '签到失败，请稍后重试');
     }
   };
-
-  // ===== 未登录：显示登录页 =====
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-slate-50 to-slate-100 select-none">
-        {/* 密码设置弹窗 */}
-        {needsPassword && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="w-8 h-8 text-indigo-600" />
-                </div>
-                <h2 className="text-xl font-bold text-slate-900">设置登录密码</h2>
-                <p className="text-sm text-slate-500 mt-2">请设置一个密码来保护您的账户</p>
-              </div>
-              <div className="space-y-4">
-                <input
-                  type="password"
-                  id="initPw"
-                  placeholder="输入密码（至少6位）"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
-                />
-                <input
-                  type="password"
-                  id="initPwConfirm"
-                  placeholder="再次输入密码"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
-                />
-                <button
-                  onClick={() => {
-                    const pw = (document.getElementById('initPw') as HTMLInputElement).value;
-                    const pw2 = (document.getElementById('initPwConfirm') as HTMLInputElement).value;
-                    if (pw.length < 6) { alert('密码至少6位'); return; }
-                    if (pw !== pw2) { alert('两次密码不一致'); return; }
-                    handleSetPassword(pw);
-                  }}
-                  className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition"
-                >设置密码并进入</button>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 w-full max-w-md p-8">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <BookOpen className="w-8 h-8 text-indigo-600" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">欢迎使用 Pepper</h1>
-            <p className="text-slate-500 mt-2">低AI率论文助手</p>
-          </div>
-
-          {loginError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">
-              {loginError}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">登录方式</label>
-              {/* Row 1: main choice - 手机 / 邮箱 */}
-              <div className="flex gap-3 mb-2">
-                <button
-                  disabled
-                  title="手机登录已关闭"
-                  className="flex-1 px-4 py-3 rounded-xl border-2 font-medium transition border-slate-200 text-slate-400 cursor-not-allowed"
-                >📱 手机登录（已关闭）</button>
-                <button
-                  onClick={() => { setLoginType('email'); setLoginCodeSent(false); setLoginDest(''); }}
-                  className={`flex-1 px-4 py-3 rounded-xl border-2 font-medium transition ${loginType === 'email' && !loginPasswordMode ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
-                >📧 邮箱登录</button>
-              </div>
-              {/* Row 2: secondary choice - 验证码 / 密码 */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setLoginPasswordMode(false); setLoginCodeSent(false); setLoginDest(''); }}
-                  className={`flex-1 px-3 py-2 rounded-xl border text-xs font-medium transition ${!loginPasswordMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}
-                >验证码登录</button>
-                <button
-                  onClick={() => { setLoginPasswordMode(true); setLoginCodeSent(false); setLoginDest(''); }}
-                  className={`flex-1 px-3 py-2 rounded-xl border text-xs font-medium transition ${loginPasswordMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}
-                >🔐 密码登录</button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                {loginType === 'phone' ? '手机号' : '邮箱地址'}
-              </label>
-              <input
-                type={loginType === 'phone' ? 'tel' : 'email'}
-                value={loginDest}
-                onChange={(e) => setLoginDest(e.target.value)}
-                placeholder={loginType === 'phone' ? '请输入手机号' : '请输入邮箱地址'}
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
-
-            {!loginPasswordMode && loginCodeSent && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">验证码</label>
-                <input
-                  type="text"
-                  value={loginCode}
-                  onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="请输入6位验证码"
-                  maxLength={6}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-            )}
-
-            {loginPasswordMode ? (
-          <div className="space-y-3">
-            <input
-              type="password"
-              placeholder="输入密码"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handlePasswordLogin()}
-              className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm"
-            />
-            <button
-              onClick={handlePasswordLogin}
-              disabled={loginLoading || !loginDest || !loginPassword}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-indigo-700 transition"
-            >
-              {loginLoading ? '登录中...' : '登录'}
-            </button>
-          </div>
-        ) : !loginCodeSent ? (
-              <button
-                onClick={handleSendLoginCode}
-                disabled={loginLoading}
-                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition disabled:opacity-50"
-              >
-                {loginLoading ? '发送中...' : '获取验证码'}
-              </button>
-            ) : (
-              <button
-                onClick={handleVerifyLoginCode}
-                disabled={loginLoading || loginCode.length < 6}
-                className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50"
-              >
-                {loginLoading ? '验证中...' : '登录'}
-              </button>
-            )}
-
-            {!loginPasswordMode && loginCodeSent && (
-              <button
-                onClick={() => { setLoginCodeSent(false); setLoginCode(''); }}
-                className="w-full py-2 text-sm text-slate-500 hover:text-slate-700"
-              >重新获取验证码</button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ===== 已登录：主应用 =====
 
   // 生成选题
   const handleGenerate = async () => {
@@ -1245,102 +1103,111 @@ export default function Home() {
                 我的论文
               </button>
 
-              {/* 用户头像菜单 */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="w-10 h-10 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center text-white font-medium shadow-lg hover:bg-white/30 transition-all overflow-hidden"
-                >
-                  <img 
-                    src={`https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(accountData?.email || accountData?.phone || 'user')}`} 
-                    alt="avatar" 
-                    className="w-full h-full"
-                  />
-                </button>
+              {/* 登录/用户菜单 */}
+              {isLoggedIn ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="w-10 h-10 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center text-white font-medium shadow-lg hover:bg-white/30 transition-all overflow-hidden"
+                  >
+                    <img
+                      src={`https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(accountData?.email || accountData?.phone || 'user')}`}
+                      alt="avatar"
+                      className="w-full h-full"
+                    />
+                  </button>
 
-                {/* 下拉菜单 */}
-                {showUserMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                    <div className="absolute right-0 top-12 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 overflow-hidden">
-                      <div className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-between">
-                        <div>
-                          <p className="text-white font-medium">{accountData?.email || accountData?.phone}</p>
-                          <p className="text-white/70 text-xs mt-0.5">{accountData?.balance || 0} 金币</p>
+                  {/* 下拉菜单 */}
+                  {showUserMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                      <div className="absolute right-0 top-12 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 overflow-hidden">
+                        <div className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-between">
+                          <div>
+                            <p className="text-white font-medium">{accountData?.email || accountData?.phone}</p>
+                            <p className="text-white/70 text-xs mt-0.5">{accountData?.balance || 0} 金币</p>
+                          </div>
+                          <button onClick={() => { setShowUserMenu(false); window.location.href = '/topup'; }}
+                            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition">
+                            充值
+                          </button>
                         </div>
-                        <button onClick={() => { setShowUserMenu(false); window.location.href = '/topup'; }}
-                          className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition">
-                          充值
+
+                        <div className="h-px bg-slate-100" />
+
+                        <button
+                          onClick={() => { setShowUserMenu(false); handleOpenAccount().then(() => setShowProfileModal(true)); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <User className="w-4 h-4 text-slate-400" />
+                          个人资料
+                        </button>
+                        <button
+                          onClick={() => { setShowUserMenu(false); window.location.href='/signin'; }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          每日签到
+                        </button>
+                        <button
+                          onClick={() => { setShowUserMenu(false); window.location.href='/transactions'; }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Scale className="w-4 h-4 text-slate-400" />
+                          交易明细
+                        </button>
+                        <button onClick={() => router.push('/faq')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <HelpCircle className="w-4 h-4 text-slate-400" />
+                          常见问题
+                        </button>
+                        <button onClick={() => router.push('/kefu')}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <MessageCircle className="w-4 h-4 text-slate-400" />
+                          在线客服
+                        </button>
+                        <button onClick={() => router.push('/community')}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <Users className="w-4 h-4 text-slate-400" />
+                          专属社区
+                        </button>
+                        <button onClick={() => { setShowUserMenu(false); window.location.href='/review'; }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <Brain className="w-4 h-4 text-slate-400" />
+                          复习资料生成
+                        </button>
+                        <button onClick={() => router.push('/feedback')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <MessageSquare className="w-4 h-4 text-slate-400" />
+                          问题反馈
+                        </button>
+                        <button
+                          onClick={() => { setShowUserMenu(false); window.location.href = '/about'; }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Info className="w-4 h-4 text-slate-400" />
+                          关于我们
+                        </button>
+
+                        <div className="h-px bg-slate-100" />
+
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          退出登录
                         </button>
                       </div>
-
-                      <div className="h-px bg-slate-100" />
-
-                      <button
-                        onClick={() => { setShowUserMenu(false); handleOpenAccount().then(() => setShowProfileModal(true)); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <User className="w-4 h-4 text-slate-400" />
-                        个人资料
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); window.location.href='/signin'; }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        每日签到
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); window.location.href='/transactions'; }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <Scale className="w-4 h-4 text-slate-400" />
-                        交易明细
-                      </button>
-                      <button onClick={() => router.push('/faq')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                        <HelpCircle className="w-4 h-4 text-slate-400" />
-                        常见问题
-                      </button>
-                      <button onClick={() => router.push('/kefu')}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                        <MessageCircle className="w-4 h-4 text-slate-400" />
-                        在线客服
-                      </button>
-                      <button onClick={() => router.push('/community')}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                        <Users className="w-4 h-4 text-slate-400" />
-                        专属社区
-                      </button>
-                      <button onClick={() => { setShowUserMenu(false); window.location.href='/review'; }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                        <Brain className="w-4 h-4 text-slate-400" />
-                        复习资料生成
-                      </button>
-                      <button onClick={() => router.push('/feedback')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                        <MessageSquare className="w-4 h-4 text-slate-400" />
-                        问题反馈
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); window.location.href = '/about'; }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <Info className="w-4 h-4 text-slate-400" />
-                        关于我们
-                      </button>
-
-                      <div className="h-px bg-slate-100" />
-
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        退出登录
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="px-4 py-2 bg-white text-indigo-600 font-semibold rounded-xl text-sm hover:bg-indigo-50 transition shadow"
+                >
+                  登录
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2765,6 +2632,136 @@ export default function Home() {
         </div>
       </div>
     )}
+
+    {/* 登录弹窗 */}
+    {showLoginModal && (
+      <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+        <div className="absolute inset-0" onClick={() => setShowLoginModal(false)} />
+        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          {/* 密码设置弹窗 */}
+          {needsPassword && (
+            <div className="absolute inset-0 bg-white z-10 flex items-center justify-center p-8">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Sparkles className="w-8 h-8 text-indigo-600" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">设置登录密码</h2>
+                <p className="text-sm text-slate-500 mb-4">请设置一个密码来保护您的账户</p>
+                <div className="space-y-3">
+                  <input type="password" id="initPw" placeholder="输入密码（至少6位）"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm" />
+                  <input type="password" id="initPwConfirm" placeholder="再次输入密码"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm" />
+                  <button
+                    onClick={() => {
+                      const pw = (document.getElementById('initPw') as HTMLInputElement).value;
+                      const pw2 = (document.getElementById('initPwConfirm') as HTMLInputElement).value;
+                      if (pw.length < 6) { alert('密码至少6位'); return; }
+                      if (pw !== pw2) { alert('两次密码不一致'); return; }
+                      handleSetPassword(pw);
+                    }}
+                    className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition"
+                  >设置密码并进入</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">登录 Pepper</h2>
+                  <p className="text-xs text-slate-500">低AI率论文助手</p>
+                </div>
+              </div>
+              <button onClick={() => setShowLoginModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">
+                {loginError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {/* 登录方式切换 */}
+              <div className="flex gap-2">
+                <button disabled className="flex-1 py-2 rounded-xl border text-xs font-medium border-slate-200 text-slate-400 cursor-not-allowed">📱 手机（已关闭）</button>
+                <button
+                  onClick={() => { setLoginType('email'); setLoginCodeSent(false); setLoginDest(''); setLoginPasswordMode(false); }}
+                  className={`flex-1 py-2 rounded-xl border text-xs font-medium transition ${loginType === 'email' && !loginPasswordMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                >📧 邮箱</button>
+              </div>
+
+              {/* 邮箱输入 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">邮箱地址</label>
+                <input type="email" value={loginDest}
+                  onChange={(e) => setLoginDest(e.target.value)}
+                  placeholder="请输入邮箱地址"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" />
+              </div>
+
+              {/* 验证码模式 */}
+              {!loginPasswordMode && (
+                <>
+                  {!loginCodeSent ? (
+                    <button onClick={handleSendLoginCode}
+                      disabled={loginLoading || !loginDest}
+                      className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm disabled:opacity-50 hover:bg-indigo-700 transition">
+                      {loginLoading ? '发送中...' : '获取验证码'}
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <input type="text" value={loginCode}
+                        onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="请输入6位验证码" maxLength={6}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" />
+                      <button onClick={handleVerifyLoginCode}
+                        disabled={loginLoading || loginCode.length < 6}
+                        className="w-full py-3 bg-green-600 text-white rounded-xl font-medium text-sm disabled:opacity-50 hover:bg-green-700 transition">
+                        {loginLoading ? '验证中...' : '登录'}
+                      </button>
+                      <button onClick={() => { setLoginCodeSent(false); setLoginCode(''); }}
+                        className="w-full py-2 text-sm text-slate-500 hover:text-slate-700">重新获取验证码</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* 密码模式 */}
+              {loginPasswordMode && (
+                <div className="space-y-2">
+                  <input type="password" placeholder="输入密码" value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handlePasswordLogin()}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm" />
+                  <button onClick={handlePasswordLogin}
+                    disabled={loginLoading || !loginDest || !loginPassword}
+                    className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm disabled:opacity-50 hover:bg-indigo-700 transition">
+                    {loginLoading ? '登录中...' : '登录'}
+                  </button>
+                </div>
+              )}
+
+              {/* 切换登录方式 */}
+              <button onClick={() => { setLoginPasswordMode(!loginPasswordMode); setLoginCodeSent(false); }}
+                className="w-full py-2 text-xs text-indigo-500 hover:text-indigo-700">
+                {loginPasswordMode ? '切换验证码登录' : '🔐 密码登录'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
     </div>
   );
 }
