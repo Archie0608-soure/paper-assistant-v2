@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import mammoth from 'mammoth';
 import { useRouter } from 'next/navigation';
-import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload } from 'lucide-react';
+import { Lightbulb, Loader2, BookOpen, Layout, PenTool, Sparkles, FileDown, ArrowRight, ArrowLeft, Check, Edit3, Save, Search as SearchIcon, ExternalLink, Star, Trash2, User, Calendar, HelpCircle, MessageCircle, Users, MessageSquare, Info, LogOut, X, Bot, Scale, ShieldCheck, FileText, Wand2, Sparkles as SparklesIcon, Presentation, Brain, Languages, Library, Upload, Download, RotateCcw, Home as HomeIcon } from 'lucide-react';
 import { exportToDocx } from '@/lib/docx';
 
 // 常见专业分类
@@ -187,6 +187,31 @@ export default function Home() {
     { code: 'th', label: 'ภาษาไทย' },
     { code: 'vi', label: 'Tiếng Việt' },
   ];
+
+  // PPT生成状态
+  const [pptTitle, setPptTitle] = useState('');
+  const [pptName, setPptName] = useState('');
+  const [pptSchool, setPptSchool] = useState('');
+  const [pptKeywords, setPptKeywords] = useState('');
+  const [pptPages, setPptPages] = useState(10);
+  const [pptTemplates, setPptTemplates] = useState<any[]>([]);
+  const [pptSelectedTemplate, setPptSelectedTemplate] = useState<any>(null);
+  const [pptLoading, setPptLoading] = useState(false);
+  const [pptError, setPptError] = useState('');
+  const [pptDownloadUrl, setPptDownloadUrl] = useState('');
+  const [pptShowPreview, setPptShowPreview] = useState(false);
+  const [pptProgress, setPptProgress] = useState('');
+
+  const PPT_PAGE_OPTIONS = [15, 18, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+  const getPptTimeRange = (pages: number) => {
+    const map: Record<number, {min: number; max: number}> = {
+      15: {min:12,max:15}, 18: {min:15,max:18}, 20: {min:18,max:20},
+      25: {min:22,max:25}, 30: {min:27,max:30}, 35: {min:32,max:35},
+      40: {min:37,max:40}, 45: {min:42,max:45}, 50: {min:47,max:50},
+      55: {min:52,max:55}, 60: {min:57,max:60},
+    };
+    return map[pages] || {min:10, max:15};
+  };
 
   const [loginType, setLoginType] = useState<'phone' | 'email'>('email');
   const [loginDest, setLoginDest] = useState('');
@@ -1032,6 +1057,34 @@ export default function Home() {
     }
   };
 
+  // PPT：获取模板列表
+  useEffect(() => {
+    if (activeFeature === 'ppt' && pptTemplates.length === 0) {
+      fetch('/api/ppt/templates', { credentials: 'include' })
+        .then(r => r.json())
+        .then(d => setPptTemplates(d.templates || []))
+        .catch(() => {});
+    }
+  }, [activeFeature]);
+
+  // PPT：生成
+  const handlePptGenerate = async () => {
+    if (!pptTitle.trim()) { setPptError('请输入论文标题'); return; }
+    if (!pptName.trim()) { setPptError('请输入姓名'); return; }
+    setPptError(''); setPptLoading(true); setPptProgress('正在生成...');
+    try {
+      const res = await fetch('/api/ppt/generate', {
+        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: pptTitle, name: pptName, school: pptSchool, keywords: pptKeywords, pages: pptPages, template: pptSelectedTemplate?.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '生成失败');
+      setPptProgress(''); setPptDownloadUrl(data.url);
+    } catch (e: any) { setPptError(e.message || '生成失败'); }
+    finally { setPptLoading(false); }
+  };
+
   // 翻译：处理文件上传
   const handleTranslateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1312,7 +1365,7 @@ export default function Home() {
           <span className="font-medium">论文翻译</span>
         </button>
         <button
-          onClick={() => router.push('/ppt')}
+          onClick={() => setActiveFeature('ppt')}
           className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 rounded-xl text-xs transition-all ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 shadow border border-slate-200'}`}
         >
           <Presentation className="w-5 h-5" />
@@ -1367,7 +1420,7 @@ export default function Home() {
               <span className="font-medium">论文翻译</span>
             </button>
             <button
-              onClick={() => router.push('/ppt')}
+              onClick={() => setActiveFeature('ppt')}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ${activeFeature === 'ppt' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
             >
               <Presentation className="w-5 h-5" />
@@ -2275,6 +2328,157 @@ export default function Home() {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* AI PPT界面 */}
+        {activeFeature === 'ppt' && (
+          <div className="w-full max-h-[calc(100vh-180px)] overflow-y-auto space-y-4 pb-4">
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <Presentation className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">AI 答辩PPT</h3>
+                  <p className="text-xs text-slate-500">输入信息，一键生成专业答辩PPT</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {/* 论文标题 */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">论文标题 <span className="text-red-500">*</span></label>
+                  <input value={pptTitle} onChange={e => setPptTitle(e.target.value)}
+                    placeholder="例如：基于深度学习的图像识别技术研究"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                </div>
+
+                {/* 姓名 + 学校 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-800 mb-1.5">姓名 <span className="text-red-500">*</span></label>
+                    <input value={pptName} onChange={e => setPptName(e.target.value)} placeholder="张三"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-800 mb-1.5">学校</label>
+                    <input value={pptSchool} onChange={e => setPptSchool(e.target.value)} placeholder="某某大学"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                  </div>
+                </div>
+
+                {/* 关键词 */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">关键词</label>
+                  <input value={pptKeywords} onChange={e => setPptKeywords(e.target.value)} placeholder="深度学习、图像识别、卷积神经网络"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                </div>
+
+                {/* 模板选择 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-slate-800">🎨 选择模板</label>
+                    {pptSelectedTemplate && (
+                      <button onClick={() => setPptSelectedTemplate(null)} className="text-xs text-red-400 hover:text-red-500">取消选择</button>
+                    )}
+                  </div>
+                  {pptSelectedTemplate ? (
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 border border-indigo-200 rounded-xl">
+                      <div className="flex rounded-lg overflow-hidden flex-shrink-0">
+                        <div className="w-4 h-10" style={{backgroundColor: '#' + pptSelectedTemplate.colors?.primary}} />
+                        <div className="w-4 h-10" style={{backgroundColor: '#' + pptSelectedTemplate.colors?.secondary}} />
+                        <div className="w-4 h-10" style={{backgroundColor: '#' + pptSelectedTemplate.colors?.accent}} />
+                        <div className="w-4 h-10" style={{backgroundColor: '#' + pptSelectedTemplate.colors?.bg}} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-800 truncate">[{pptSelectedTemplate.index}] {pptSelectedTemplate.name}</div>
+                        <div className="text-xs text-slate-400">{pptSelectedTemplate.slideCount}页 · {pptSelectedTemplate.category}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="flex gap-2 p-3 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+                        {pptTemplates.slice(0,20).map((t: any) => (
+                          <button key={t.id} onClick={() => setPptSelectedTemplate(t)}
+                            className="flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all"
+                            title={`[${t.index}] ${t.name}`}>
+                            <div className="flex h-10">
+                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.primary}} />
+                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.secondary}} />
+                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.accent}} />
+                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.bg}} />
+                            </div>
+                            <div className="text-center text-xs font-bold text-indigo-600 px-0.5 py-0.5">{t.index}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="px-3 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-500">
+                        共 {pptTemplates.length} 个模板
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 页数选择 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-slate-800">PPT页数</label>
+                    <span className="text-xl font-bold text-indigo-600">{pptPages}<span className="text-sm text-slate-400 font-normal ml-1">页</span></span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {PPT_PAGE_OPTIONS.map(n => (
+                      <button key={n} onClick={() => { setPptPages(n); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${pptPages === n ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                        {n}页
+                      </button>
+                    ))}
+                  </div>
+                  <input type="range" min={15} max={60} step={1} value={pptPages} onChange={e => setPptPages(Number(e.target.value))}
+                    className="w-full accent-indigo-500 cursor-pointer" />
+                  <p className="text-center text-xs text-slate-400 mt-1">建议演讲时长：<span className="text-indigo-600 font-semibold">{getPptTimeRange(pptPages).min}-{getPptTimeRange(pptPages).max} 分钟</span></p>
+                </div>
+
+                {pptError && (
+                  <div className="px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">⚠️ {pptError}</div>
+                )}
+
+                {/* 生成按钮 */}
+                <button onClick={handlePptGenerate} disabled={pptLoading}
+                  className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                  {pptLoading ? <><Loader2 className="w-4 h-4 animate-spin" />{pptProgress || '生成中...'}</> : <><Presentation className="w-4 h-4" />一键生成答辩PPT</>}
+                </button>
+
+                {/* 成功下载区 */}
+                {pptDownloadUrl && !pptLoading && (
+                  <div className="p-5 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl text-center">
+                    <p className="text-base font-bold text-green-700 mb-1">✅ PPT生成成功！</p>
+                    <p className="text-xs text-green-500 mb-3">文件已生成，可直接下载</p>
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      <a href={pptDownloadUrl.startsWith("/") ? "/api/ppt/download?file=" + encodeURIComponent(pptDownloadUrl.slice(1)) : pptDownloadUrl} download
+                        className="px-5 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors flex items-center gap-2">
+                        <Download className="w-4 h-4" />下载PPT
+                      </a>
+                      <button onClick={() => setPptShowPreview(!pptShowPreview)}
+                        className="px-4 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-xl text-sm font-medium hover:bg-indigo-100 transition-colors">
+                        {pptShowPreview ? "关闭预览" : "在线预览"}
+                      </button>
+                    </div>
+                    {pptShowPreview && (
+                      <iframe
+                        src={'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent('https://pepperai.com.cn' + (pptDownloadUrl.startsWith('/') ? '/api/ppt/download?file=' + encodeURIComponent(pptDownloadUrl.slice(1)) : pptDownloadUrl))}
+                        width="100%" height="400" frameBorder="0" className="rounded-xl border border-slate-200 mt-3"></iframe>
+                    )}
+                    <div className="flex gap-2 justify-center flex-wrap mt-2">
+                      <button onClick={() => { setPptDownloadUrl(''); setPptTitle(''); }}
+                        className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-medium hover:bg-slate-50 transition-colors flex items-center gap-1">
+                        <RotateCcw className="w-3 h-3" />重新生成
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
