@@ -3021,10 +3021,9 @@ export default function Home() {
         {activeFeature === 'reduce' && (
           <div className="relative z-10 w-full max-h-[calc(100vh-130px)] overflow-y-auto space-y-4 pb-4">
 
-            {/* 四步流程指引（白色背景卡片） */}
-            <div className="bg-white rounded-2xl shadow-md border border-slate-100 p-4 mb-4">
-              <div className="flex flex-col items-center gap-3">
-              <p className="text-sm font-semibold text-slate-600 bg-white/80 px-3 py-1 rounded-lg">简单四步，快速降低论文重复率 & AI率</p>
+            {/* 四步流程指引（四个白色圆圈，无大卡片背景） */}
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm font-semibold text-slate-600">简单四步，快速降低论文重复率 & AI率</p>
               <div className="flex items-center justify-between w-full max-w-2xl">
                 {[
                   { step: 1, label: '上传文档', desc: 'Word .docx' },
@@ -3045,7 +3044,6 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-            </div>
             </div>
 
             <div className="bg-white/95 rounded-2xl shadow-lg border border-slate-200/60 p-6 backdrop-blur-sm">
