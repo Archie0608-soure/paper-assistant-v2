@@ -1695,10 +1695,10 @@ export default function Home() {
           <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 overflow-hidden">
             <button
               onClick={() => setActiveFeature('generate')}
-              className={`w-full flex flex-col items-center gap-2 px-4 py-5 text-sm transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white scale-105 shadow-lg py-5 text-base' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:scale-102'}`}
             >
-              <FileText className="w-6 h-6" />
-              <span className="font-semibold text-base">文章生成</span>
+              <FileText className="w-5 h-5" />
+              <span className="font-medium">文章生成</span>
             </button>
             <button
               onClick={() => setActiveFeature('translate')}
