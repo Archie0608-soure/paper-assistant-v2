@@ -3017,7 +3017,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* 四步流程指引（始终显示，文字颜色随背景渐变同步变化） */}
+        {/* 四步流程指引（仅降重功能显示） */}
+        {activeFeature === 'reduce' && (
         <div className="flex flex-col items-center gap-3">
           <p className={`text-sm font-semibold transition-colors duration-700 ${
             activeFeature === 'reduce' ? 'text-slate-700' : 'text-white'
@@ -3050,6 +3051,7 @@ export default function Home() {
             ))}
           </div>
         </div>
+        )}
 
         {/* 降重降AI界面 */}
         {activeFeature === 'reduce' && (
