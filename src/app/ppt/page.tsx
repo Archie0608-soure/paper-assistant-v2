@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Presentation, ArrowLeft, Loader2, Download, RotateCcw, Home } from 'lucide-react';
+import { Presentation, ArrowLeft, Loader2, Download, RotateCcw, Home, X } from 'lucide-react';
 import Link from 'next/link';
 
 const PAGE_OPTIONS = [15, 18, 20, 25, 30, 35, 40, 45, 50, 55, 60];
@@ -33,7 +33,23 @@ export default function PPTPage() {
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [accountData, setAccountData] = useState<any>(null);
+  const [selectedPreview, setSelectedPreview] = useState<any>(null);  // 已选中的模板
+  const [previewTemplate, setPreviewTemplate] = useState<any>(null);  // 正在预览的模板
+  const [previewData, setPreviewData] = useState<any>(null);  // 预览数据（从PPTX提取）
+  const [previewLoading, setPreviewLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 预览弹窗打开时获取模板内容
+  useEffect(() => {
+    if (!previewTemplate) { setPreviewData(null); return; }
+    setPreviewLoading(true);
+    setPreviewData(null);
+    const file = previewTemplate.file;
+    fetch(`/api/ppt/preview?file=${encodeURIComponent(file)}`)
+      .then(r => r.json())
+      .then(data => { setPreviewData(data); setPreviewLoading(false); })
+      .catch(() => { setPreviewLoading(false); });
+  }, [previewTemplate]);
 
   useEffect(() => {
     const fetchAccount = async () => {
@@ -48,6 +64,13 @@ export default function PPTPage() {
       } catch {}
     };
     fetchAccount();
+
+    // 加载模板列表
+    fetch('/api/ppt/templates')
+      .then(r => r.json())
+      .then(data => { if (data.templates) setTemplates(data.templates); })
+      .catch(() => {});
+
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowUserMenu(false);
@@ -58,6 +81,10 @@ export default function PPTPage() {
   }, []);
   const [error, setError] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
+  // 模板预览URL（用于点击查看大图）
+  const templatePreviewSrc = selectedPreview
+    ? 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent('https://pepperai.com.cn' + (selectedPreview.file.startsWith('/') ? '/api/ppt/download?file=' + encodeURIComponent(selectedPreview.file.slice(1)) : selectedPreview.file))
+    : '';
   const [showPreview, setShowPreview] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -104,7 +131,7 @@ export default function PPTPage() {
   const previewSrc = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent('https://pepperai.com.cn' + (downloadUrl.startsWith('/') ? '/api/ppt/download?file=' + encodeURIComponent(downloadUrl.slice(1)) : downloadUrl));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50">
+    <div className="bg-gradient-to-br from-slate-50 to-indigo-50">
       {/* 顶部导航 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-4">
@@ -150,7 +177,7 @@ export default function PPTPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-5">
+      <main className="max-w-3xl mx-auto px-4 py-6 pb-12 space-y-5 overflow-y-auto">
         {/* 历史记录 */}
         {history.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -238,9 +265,9 @@ export default function PPTPage() {
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="flex gap-2 p-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                   {templates.slice(0, 20).map(t => (
-                    <button key={t.id} onClick={() => setSelectedTemplate(t)}
+                    <button key={t.id} onClick={() => setPreviewTemplate(t)}
                       className="flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all"
-                      title={`[${t.index}] ${t.name}`}>
+                      title={`点击预览 ${t.name}`}>
                       <div className="flex h-10">
                         <div className="w-5" style={{ backgroundColor: '#' + t.colors.primary }} />
                         <div className="w-5" style={{ backgroundColor: '#' + t.colors.secondary }} />
@@ -355,6 +382,110 @@ export default function PPTPage() {
           ))}
         </div>
       </main>
+
+      {/* 模板预览弹窗 */}
+      {previewTemplate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full overflow-hidden shadow-2xl">
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">{previewTemplate.name}</p>
+                <p className="text-xs text-slate-400">{previewTemplate.slideCount}页 · {previewTemplate.category}</p>
+              </div>
+              <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); }} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              {/* 加载预览数据 */}
+              {!previewData && !previewLoading && (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-slate-500 text-sm">正在加载预览...</p>
+                  </div>
+                </div>
+              )}
+              {previewLoading && (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-slate-500 text-sm">正在解析模板内容...</p>
+                  </div>
+                </div>
+              )}
+              {previewData && (
+                <div>
+                  {/* 模拟PPT幻灯片预览 */}
+                  <div
+                    className="rounded-xl overflow-hidden shadow-lg mx-auto relative"
+                    style={{ backgroundColor: '#' + previewData.bgColor, maxWidth: 700 }}
+                  >
+                    {/* 顶部色条 */}
+                    <div className="flex">
+                      {(previewData.colors || []).slice(0, 4).map((c: string, i: number) => (
+                        <div key={i} className="h-2 flex-1" style={{ backgroundColor: '#' + c }} />
+                      ))}
+                    </div>
+                    {/* 幻灯片内容 */}
+                    <div className="p-8 min-h-64">
+                      {previewData.boldText && previewData.boldText.length > 0 ? (
+                        <div className="space-y-3">
+                          {previewData.boldText.slice(0, 2).map((t: string, i: number) => (
+                            <p key={i} className="font-bold text-lg" style={{ color: '#' + (previewData.colors[0] || '333333') }}>{t}</p>
+                          ))}
+                          {(previewData.texts || []).filter((_: any, i: number) => !previewData.boldText.includes(_)).slice(0, 4).map((t: string, i: number) => (
+                            <p key={i} className="text-sm mt-1" style={{ color: '#' + (previewData.colors[1] || '666666') }}>{t.length > 60 ? t.slice(0, 60) + '...' : t}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {(previewData.texts || []).slice(0, 5).map((t: string, i: number) => (
+                            <p key={i} className="text-sm" style={{ color: i === 0 ? '#' + (previewData.colors[0] || '333333') : '#' + (previewData.colors[1] || '666666') }}>{t.length > 80 ? t.slice(0, 80) + '...' : t}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* 底部装饰 */}
+                    <div className="flex items-center justify-between px-8 pb-6">
+                      <div className="flex gap-1">
+                        {(previewData.colors || []).slice(0, 3).map((c: string, i: number) => (
+                          <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: '#' + c }} />
+                        ))}
+                      </div>
+                      <div className="text-xs opacity-50" style={{ color: '#' + (previewData.colors[0] || '333333') }}>
+                        第1页 / 共{previewTemplate.slideCount || '?'}页
+                      </div>
+                    </div>
+                  </div>
+                  {/* 颜色盘 */}
+                  <div className="flex items-center justify-center gap-3 mt-4">
+                    {(previewData.colors || []).map((c: string, i: number) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <div className="w-4 h-4 rounded border border-slate-200" style={{ backgroundColor: '#' + c }} />
+                        <span className="text-xs text-slate-400">#{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!previewData && !previewLoading && (
+                <p className="text-center text-slate-400 text-sm mt-4">无法加载预览</p>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); }}
+                className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-200">
+                关闭
+              </button>
+              <button onClick={() => { setSelectedTemplate(previewTemplate); setPreviewTemplate(null); setPreviewData(null); }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
+                使用此模板
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

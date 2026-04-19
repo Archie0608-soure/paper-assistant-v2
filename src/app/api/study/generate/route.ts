@@ -33,7 +33,7 @@ async function callSiliconFlow(prompt: string, temperature = 0.7): Promise<strin
         'Authorization': 'Bearer ' + SILICONFLOW_API_KEY,
         'Content-Length': Buffer.byteLength(body),
       },
-      timeout: 120000,
+      timeout: 240000,
     };
     const t = Date.now();
     const req = https.request(options, (res) => {
@@ -113,8 +113,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `金币不足，生成复习资料需要${ESTIMATED_COINS}金币，当前余额${balance}金币` }, { status: 402 });
     }
 
-    // 预扣
-    await supabase.from('users').update({ balance: balance - ESTIMATED_COINS }).eq('id', users.id).eq('balance', balance);
+    // 预扣（乐观锁：只有余额匹配时才扣款）
+    const deductResult = await supabase.from('users').update({ balance: balance - ESTIMATED_COINS }).eq('id', users.id).eq('balance', balance);
+    console.log('[study/generate] 预扣结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', ESTIMATED_COINS);
+    if (deductResult.count !== 1) {
+      // 余额已经被其他人改了，查询最新余额后判断
+      const { data: freshUser } = await supabase.from('users').select('balance').eq('id', users.id).maybeSingle();
+      const currentBalance = freshUser?.balance ?? 0;
+      console.log('[study/generate] 并发冲突，当前余额:', currentBalance);
+      if (currentBalance < ESTIMATED_COINS) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${ESTIMATED_COINS}）` }, { status: 402 });
+      }
+      // 并发情况，重新尝试扣款
+      const retry = await supabase.from('users').update({ balance: currentBalance - ESTIMATED_COINS }).eq('id', users.id).eq('balance', currentBalance);
+      console.log('[study/generate] 重试扣款结果:', JSON.stringify(retry));
+    }
 
     try {
       const result = await generateStudyMaterials(courseName, text);

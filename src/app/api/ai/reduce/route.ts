@@ -268,7 +268,20 @@ ${text.slice(0, 15000)}`;
       return NextResponse.json({ error: `金币不足，${modeLabel}约需${estimatedCoins}金币（${countWords(text)}字），当前余额${balance}金币` }, { status: 402 });
     }
 
-    await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', userId).eq('balance', balance);
+    // 扣金币（乐观锁检查）
+    const deductResult = await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', userId).eq('balance', balance);
+    console.log('[reduce] 扣款结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', estimatedCoins);
+    if (deductResult.count !== 1) {
+      // 余额已被并发修改，查询最新余额重新尝试
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', userId).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      console.log('[reduce] 并发冲突，当前余额:', currentBalance);
+      if (currentBalance < estimatedCoins) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${estimatedCoins}）` }, { status: 402 });
+      }
+      await supabase.from('users').update({ balance: currentBalance - estimatedCoins }).eq('id', userId).eq('balance', currentBalance);
+      console.log('[reduce] 并发扣款成功');
+    }
 
     const results: Record<string, string> = {};
     let finalCoins = estimatedCoins;

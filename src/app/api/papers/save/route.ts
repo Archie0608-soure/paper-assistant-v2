@@ -86,13 +86,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '余额不足，请先充值' }, { status: 402 });
       }
 
-      // 2. 原子扣减余额
-      const { error: deductErr } = await supabase
+      // 2. 原子扣减余额（乐观锁）
+      const deductResult = await supabase
         .from('users')
         .update({ balance: userRow.balance - 1 })
         .eq('id', userId)
-        .eq('balance', userRow.balance); // 乐观锁，防止并发重复扣
-      if (deductErr) throw deductErr;
+        .eq('balance', userRow.balance);
+      if (deductResult.error) throw deductResult.error;
+      if (deductResult.count !== 1) {
+        // 并发冲突，查询最新余额
+        const { data: fresh } = await supabase.from('users').select('balance').eq('id', userId).maybeSingle();
+        if (!fresh || fresh.balance < 1) return NextResponse.json({ error: '金币不足，请先充值' }, { status: 402 });
+        await supabase.from('users').update({ balance: fresh.balance - 1 }).eq('id', userId).eq('balance', fresh.balance);
+      }
       // 记录交易
       await supabase.from('transactions').insert({
         user_id: userId,

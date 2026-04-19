@@ -139,7 +139,7 @@ export default function DailySignInPage() {
 
       <div className="w-full max-w-md space-y-4">
         {/* 签到状态卡片 */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+        <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl p-5 border border-white/25">
           {signInData?.today_signed ? (
             <div className="text-center py-2">
               <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
@@ -172,7 +172,7 @@ export default function DailySignInPage() {
         </div>
 
         {/* 连续签到天数 */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+        <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl p-5 border border-white/25">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-slate-300 text-sm">连续签到</p>
@@ -192,7 +192,7 @@ export default function DailySignInPage() {
         </div>
 
         {/* 本月日历 */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+        <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl p-5 border border-white/25">
           <h3 className="text-white font-bold mb-4">
             {new Date().getMonth() + 1}月签到日历
           </h3>
@@ -200,7 +200,7 @@ export default function DailySignInPage() {
         </div>
 
         {/* 签到奖励规则 */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+        <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl p-5 border border-white/25">
           <h3 className="text-white font-bold mb-3">签到奖励</h3>
           <div className="space-y-2">
             {[

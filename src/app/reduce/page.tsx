@@ -540,7 +540,7 @@ export default function ReducePage() {
                   className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-indigo-400 focus:ring-0 focus:outline-none resize-none text-slate-700 text-sm placeholder:text-slate-400"
                 />
                 <div className="flex items-center justify-between mt-2">
-                  <div className="text-xs text-slate-400">{inputText.length} 字</div>
+                  <div className="text-xs text-slate-400">{inputText.length} 字（含空白字符）</div>
                   <button onClick={handleTextSubmit}
                     disabled={textProcessing || inputText.trim().length < 50}
                     className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-sm font-semibold shadow hover:shadow-lg disabled:opacity-50 flex items-center gap-2">
@@ -626,7 +626,8 @@ export default function ReducePage() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="font-bold text-slate-800 text-lg">{docxFile.name}</div>
-                    <div className="text-sm text-slate-500 mt-0.5">{docxCharCount.toLocaleString()} 字符 · {lang === 'chinese' ? '中文' : '英文'} · {platform === 'zhiwang' ? '知网' : platform}</div>
+                    <div className="text-sm text-slate-500 mt-0.5">{docxCharCount.toLocaleString()} 字符（含空格换行）· {lang === 'chinese' ? '中文' : '英文'} · {platform === 'zhiwang' ? '知网' : platform}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">* 字符数含空格、换行等所有字符数，实际正文字符以系统计费为准</div>
                   </div>
                   <button onClick={() => { setDocxStep('idle'); setDocxFile(null); }}
                     className="text-slate-400 hover:text-slate-600 p-1"><X className="w-5 h-5" /></button>
@@ -635,7 +636,8 @@ export default function ReducePage() {
                   <div>
                     <span className="text-3xl font-black text-indigo-600">{docxCost}</span>
                     <span className="text-slate-500 text-sm ml-1">金币</span>
-                    <div className="text-xs text-slate-400 mt-0.5">按 {lang === 'chinese' ? '40' : '20'}/千字符计价</div>
+                    <div className="text-xs text-slate-400">计价标准：{lang === 'chinese' ? '4' : '2'}/千字符（单降）或{lang === 'chinese' ? '6' : '3'}/千字符（双降）</div>
+                    <div className="text-xs text-slate-400 mt-0.5">* 显示字符数含空格、换行等，实际内容字符数以系统计费为准</div>
                   </div>
                   <button onClick={handleDocxStart}
                     className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-colors flex items-center gap-2">
@@ -869,7 +871,7 @@ export default function ReducePage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-slate-800 truncate">{ch.title}</div>
                       <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span>{ch.content.length} 字</span>
+                        <span>{ch.content.length} 字（含空白字符）</span>
                         <span className="text-amber-500 font-medium">{Math.ceil(ch.content.length * (mode === 'both' ? 6 / 100 : 4 / 100))} 金币</span>
                         {ch.status === 'done' ? <span className="text-green-500">✓ 已处理</span> : ch.status === 'processing' ? <span className="text-orange-500">处理中...</span> : <span className="text-slate-400">待处理</span>}
                       </div>

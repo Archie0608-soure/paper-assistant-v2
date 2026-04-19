@@ -1,10 +1,11 @@
-// /api/ai/reduce-docx/start - Step 2: 从内存取出文件，上传到 SpeedAI，启动处理
+// /api/ai/reduce-docx/start - Step 2: 从内存取出文件，上传到 SpeedAI，启动处理，扣减金币
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 // 复用 cost/route.ts 的 fileStore（通过全局变量）
 // 注意：Next.js 会保持这个在内存中
 declare global {
-  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; createdAt: number }> | undefined;
+  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; cost: number; createdAt: number }> | undefined;
 }
 if (!global.__fileStore) global.__fileStore = new Map();
 
@@ -12,11 +13,33 @@ const SPEEDAI_API_KEY = process.env.SPEEDAI_API_KEY || 'sk-pPYJHnLpQq51mjzHrmSKJ
 const SPEEDAI_HOST = 'api3.speedai.chat';
 const FILE_TTL_MS = 10 * 60 * 1000;
 
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set');
+  return createClient(url, key);
+}
+
 function cleanupExpired() {
   const now = Date.now();
   for (const [key, val] of global.__fileStore!.entries()) {
     if (now - val.createdAt > FILE_TTL_MS) global.__fileStore!.delete(key);
   }
+}
+
+// 登录验证 + 获取用户信息
+async function verifyAndGetUser(req: NextRequest) {
+  const session = req.cookies.get('pa_session');
+  if (!session?.value) return null;
+  const raw = Buffer.from(session.value, 'base64url').toString();
+  const beforeLast = raw.slice(0, raw.lastIndexOf(':'));
+  const dest = beforeLast.slice(beforeLast.indexOf(':') + 1);
+  const type = raw.startsWith('email:') ? 'email' : 'phone';
+  const destination = dest || beforeLast;
+  const userField = type === 'email' ? 'email' : 'phone';
+  const supabase = getSupabase();
+  const { data: users } = await supabase.from('users').select('id, balance').eq(userField, destination).limit(1).maybeSingle();
+  return users;
 }
 
 // 登录验证
@@ -44,9 +67,6 @@ function checkRateLimit(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  if (!verifySession(req)) {
-    return NextResponse.json({ error: '请先登录' }, { status: 401 });
-  }
   if (checkRateLimit(req)) {
     return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': '60' } });
   }
@@ -62,10 +82,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '文件已过期，请重新上传' }, { status: 400 });
     }
 
-    const { buffer, fileName, lang: storedLang, platform: storedPlatform, mode: storedMode } = stored;
+    const { buffer, fileName, lang: storedLang, platform: storedPlatform, mode: storedMode, cost: estimatedCost } = stored;
     const effectiveLang = lang || storedLang;
     const effectivePlatform = platform || storedPlatform;
     const effectiveMode = mode || storedMode;
+
+    // ===== 扣金币（乐观锁） =====
+    const supabase = getSupabase();
+    const users = await verifyAndGetUser(req);
+    if (!users) return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    const balance = users.balance ?? 0;
+    if (balance < estimatedCost) {
+      return NextResponse.json({ error: `金币不足，当前余额${balance}金币，需要${estimatedCost}金币` }, { status: 402 });
+    }
+    const deductResult = await supabase.from('users').update({ balance: balance - estimatedCost }).eq('id', users.id).eq('balance', balance);
+    console.log('[/reduce-docx/start] 扣款结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', estimatedCost, 'sessionId:', sessionId);
+    if (!deductResult.error && deductResult.count === 0) {
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', users.id).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      console.log('[/reduce-docx/start] 并发冲突，当前余额:', currentBalance, 'sessionId:', sessionId);
+      if (currentBalance < estimatedCost) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${estimatedCost}）` }, { status: 402 });
+      }
+      await supabase.from('users').update({ balance: currentBalance - estimatedCost }).eq('id', users.id).eq('balance', currentBalance);
+    }
+    // 记录交易
+    await supabase.from('transactions').insert({
+      user_id: users.id,
+      type: 'expense',
+      amount: -estimatedCost,
+      description: '论文双降（DOCX）',
+    });
+    console.log('[/reduce-docx/start] 扣款完成，sessionId:', sessionId);
+    // ===== 扣金币结束 =====
 
     // 用文件调 SpeedAI /v1/cost（拿真正的 doc_id）
     const fd = new FormData();

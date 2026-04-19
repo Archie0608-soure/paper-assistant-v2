@@ -77,7 +77,8 @@ export default function SignupPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
-                  className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  autoComplete="off"
+                  className="w-full px-4 py-2.5 rounded-xl bg-white/20 border border-white/30 text-white placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 caret-white"
                   placeholder="your@email.com"
                 />
               </div>
@@ -101,7 +102,7 @@ export default function SignupPage() {
                   onChange={e => setCode(e.target.value)}
                   required
                   maxLength={6}
-                  className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-center text-2xl tracking-widest"
+                  className="w-full px-4 py-2.5 rounded-xl bg-white/20 border border-white/30 text-white placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 caret-white text-center text-2xl tracking-widest"
                   placeholder="000000"
                 />
               </div>

@@ -134,9 +134,6 @@ export default function TranslatePage() {
             onChange={e => setInputText(e.target.value)}
             placeholder="粘贴要翻译的文本，或上传 .docx / .txt 文件..."
             className="w-full p-4 h-48 text-sm resize-none focus:outline-none rounded-b-xl"
-            onCopy={e => e.preventDefault()}
-            onPaste={e => e.preventDefault()}
-            onCut={e => e.preventDefault()}
           />
         </div>
 

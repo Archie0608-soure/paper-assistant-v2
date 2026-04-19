@@ -2120,8 +2120,6 @@ export default function Home() {
                   setSelectedTopicTitle(topicTitle || '');
                 }}
                 selectedTopic={selectedTopic}
-                showSignInModal={showSignInModal}
-                setShowSignInModal={setShowSignInModal}
               />
 
               
@@ -3812,7 +3810,7 @@ export default function Home() {
 
 
 // 解析选题结果的辅助组件
-function TopicCards({ result, onSelect, selectedTopic, showSignInModal, setShowSignInModal }: { result: any; onSelect: (n: number, topicTitle?: string) => void; selectedTopic: number | null; showSignInModal: boolean; setShowSignInModal: (v: boolean) => void }) {  // 尝试解析结构化 JSON
+function TopicCards({ result, onSelect, selectedTopic }: { result: any; onSelect: (n: number, topicTitle?: string) => void; selectedTopic: number | null }) {  // 尝试解析结构化 JSON
   let topics: any[] = [];
   if (result && typeof result === 'object' && Array.isArray(result)) {
     topics = result;
@@ -3901,9 +3899,6 @@ function TopicCards({ result, onSelect, selectedTopic, showSignInModal, setShowS
           </div>
         </button>
       ))}
-      {showSignInModal && (
-        <SignInModal onClose={() => setShowSignInModal(false)} />
-      )}
     </div>
   );
 }

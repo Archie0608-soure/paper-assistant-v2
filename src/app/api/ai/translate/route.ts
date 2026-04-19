@@ -59,8 +59,10 @@ function splitText(text: string, maxChars: number = 1800): string[] {
 }
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
+  if (!text || !text.trim()) { console.log('[translateChunk] 空文本，跳过'); return ''; }
   const salt = Date.now().toString() + Math.random().toString(36).slice(2, 8);
   const sign = buildSignature(APP_ID, text, salt, SECRET_KEY);
+  console.log('[translateChunk] 实际发送文本长度:', text.trim().length, '首50字:', JSON.stringify(text.trim().slice(0, 50)));
 
   const params = new URLSearchParams({
     q: text,
@@ -126,14 +128,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `金币不足，翻译约需${estimatedCoins}金币（${charCount}字），当前余额${balance}金币` }, { status: 402 });
     }
 
-    // 扣金币
-    await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', uid).eq('balance', balance);
+    // 扣金币（乐观锁）：status 204 / count 0 / count null 都算失败需重试
+    const deductResult = await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', uid).eq('balance', balance);
+    console.log('[translate] 扣款结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', estimatedCoins);
+    if (deductResult.count !== 1) {
+      // 余额已被并发修改，查询最新余额重新尝试
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', uid).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      console.log('[translate] 并发冲突，当前余额:', currentBalance);
+      if (currentBalance < estimatedCoins) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${estimatedCoins}）` }, { status: 402 });
+      }
+      const retry = await supabase.from('users').update({ balance: currentBalance - estimatedCoins }).eq('id', uid).eq('balance', currentBalance);
+      console.log('[translate] 重试扣款结果:', JSON.stringify(retry));
+    }
 
     try {
       // 用占位符保留段落结构，避免拼接时重复插入换行
       const PARA_MARKER = '\x00PARA\x00';
       const normalized = text.split(/\n{2,}/).map((p: string) => p.trim()).filter((p: string) => Boolean(p));
-      const chunks = splitText(normalized.join(PARA_MARKER + '\n\n' + PARA_MARKER), 1800);
+      if (normalized.length === 0) return NextResponse.json({ error: '没有可翻译的文本内容' }, { status: 400 });
+      const chunks = splitText(normalized.join(PARA_MARKER + '\n\n' + PARA_MARKER), 1800).filter(c => c.trim().length > 0);
+      console.log('[translate] 开始翻译，原始长度:', text.length, '，分段数:', chunks.length, '，首段:', JSON.stringify(text.slice(0, 50)));
       const translated = await Promise.all(chunks.map(c => translateChunk(c, from, to)));
       const rawResult = translated.join('\n\n');
       // 把占位符替换回双换行，还原段落结构

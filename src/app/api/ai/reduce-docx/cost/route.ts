@@ -35,7 +35,7 @@ const FILE_TTL_MS = 10 * 60 * 1000; // 10分钟过期
 
 // 复用 start/route.ts 的全局 fileStore
 declare global {
-  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; createdAt: number }> | undefined;
+  var __fileStore: Map<string, { buffer: Buffer; fileName: string; lang: string; platform: string; mode: string; cost: number; createdAt: number }> | undefined;
 }
 if (!global.__fileStore) global.__fileStore = new Map();
 const fileStore = global.__fileStore;
@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
 
     // 首次上传（lang=chinese默认值）时用检测到的语言；后续重选语言时用用户指定的
     const effectiveLang = lang === 'chinese' || lang === 'english' ? lang : detectedLang;
+    const ourCoins = calcCoins(charCount || 1000, effectiveLang, mode);
 
     fileStore.set(sessionId, {
       buffer,
@@ -84,10 +85,10 @@ export async function POST(req: NextRequest) {
       lang: effectiveLang,
       platform,
       mode,
+      cost: ourCoins,
       createdAt: Date.now(),
     });
 
-    const ourCoins = calcCoins(charCount || 1000, effectiveLang, mode);
     console.log(`[/reduce-docx/cost] 字符数=${charCount}，金币=${ourCoins}，mode=${mode}，lang=${effectiveLang}(检测:${detectedLang})，sessionId=${sessionId}`);
 
     return NextResponse.json({

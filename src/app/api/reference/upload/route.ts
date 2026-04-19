@@ -118,10 +118,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (files.length === 0) return NextResponse.json({ error: '请选择文件' }, { status: 400 });
-    if (files.length > 10) return NextResponse.json({ error: '最多上传10个文件' }, { status: 400 });
+    if (files.length > 40) return NextResponse.json({ error: '最多上传40个文件' }, { status: 400 });
 
     const MAX_SIZE = 5 * 1024 * 1024; // 5MB per file
-    const MAX_TOTAL = 20 * 1024 * 1024; // 20MB total
+    const MAX_TOTAL = 200 * 1024 * 1024; // 200MB total (40 x 5MB)
     let totalSize = 0;
     for (const f of files) totalSize += f.size;
     if (totalSize > MAX_TOTAL) return NextResponse.json({ error: '总文件大小不能超过20MB' }, { status: 400 });

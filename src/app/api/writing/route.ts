@@ -43,10 +43,18 @@ async function deductCoins(destination: string, action: CoinAction, textLength: 
     throw new Error(`余额不足，需要${coins}金币，当前${user.balance}金币`);
   }
 
-  await supabase
+  const deductResult = await supabase
     .from('users')
     .update({ balance: user.balance - coins })
-    .eq(userField, destination);
+    .eq(userField, destination)
+    .eq('balance', user.balance);
+  console.log('[writing] 扣款结果:', JSON.stringify(deductResult), '原余额:', user.balance, '应扣:', coins);
+  if (deductResult.count !== 1) {
+    const { data: fresh } = await supabase.from('users').select('balance').eq(userField, destination).maybeSingle();
+    const currentBalance = fresh?.balance ?? 0;
+    if (currentBalance < coins) throw new Error('金币不足（当前余额' + currentBalance + '，需要' + coins + '）');
+    await supabase.from('users').update({ balance: currentBalance - coins }).eq(userField, destination).eq('balance', currentBalance);
+  }
 
   return coins;
 }

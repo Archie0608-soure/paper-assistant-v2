@@ -2,9 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import pptxgen from 'pptxgenjs';
 import fs from 'fs';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import { verifySession } from '@/lib/apiAuth';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-deb255ccb90b4381baf2d84398480cc1';
+const PPT_COINS = 20; // 答辩PPT固定20金币
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set');
+  return createClient(url, key);
+}
 
 async function callDeepSeek(prompt: string): Promise<string> {
   const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
@@ -116,6 +125,50 @@ function addBulletPoints(slide: any, content: string, x: number, y: number, w: n
 export async function POST(req: NextRequest) {
   const check = verifySession(req);
   if (!check.ok) return check.response;
+
+  // ===== 扣金币（乐观锁） =====
+  let billUserId: string | null = null;
+  try {
+    const session = req.cookies.get('pa_session');
+    if (!session?.value) return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    const raw = Buffer.from(session.value, 'base64url').toString();
+    const beforeLast = raw.slice(0, raw.lastIndexOf(':'));
+    const dest = beforeLast.slice(beforeLast.indexOf(':') + 1);
+    const type = raw.startsWith('email:') ? 'email' : 'phone';
+    const destination = dest || beforeLast;
+    const userField = type === 'email' ? 'email' : 'phone';
+    const supabase = getSupabase();
+    const { data: users } = await supabase.from('users').select('id, balance').eq(userField, destination).limit(1).maybeSingle();
+    if (!users) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+    const balance = users.balance ?? 0;
+    billUserId = users.id;
+    if (balance < PPT_COINS) {
+      return NextResponse.json({ error: `金币不足，当前余额${balance}金币，生成PPT需要${PPT_COINS}金币` }, { status: 402 });
+    }
+    const deductResult = await supabase.from('users').update({ balance: balance - PPT_COINS }).eq('id', users.id).eq('balance', balance);
+    console.log('[/ppt/generate] 扣款结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', PPT_COINS);
+    if (!deductResult.error && deductResult.count === 0) {
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', users.id).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      if (currentBalance < PPT_COINS) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${PPT_COINS}）` }, { status: 402 });
+      }
+      await supabase.from('users').update({ balance: currentBalance - PPT_COINS }).eq('id', users.id).eq('balance', currentBalance);
+    }
+    // 记录交易
+    await supabase.from('transactions').insert({
+      user_id: users.id,
+      type: 'expense',
+      amount: -PPT_COINS,
+      description: 'AI答辩PPT生成',
+    });
+    console.log('[/ppt/generate] 扣款完成');
+  } catch (err: any) {
+    console.error('[/ppt/generate] 扣款失败:', err.message);
+    return NextResponse.json({ error: '扣款失败: ' + err.message }, { status: 500 });
+  }
+  // ===== 扣金币结束 =====
+
   try {
     const { title, name, school, keywords, pages = 10, customChapters, templateId } = await req.json();
     if (!title) return NextResponse.json({ error: '缺少论文标题' }, { status: 400 });
@@ -327,6 +380,15 @@ PPT总页数：${pagesNum}页
     const fileUrl = `/downloads/${fileName}`;
     return NextResponse.json({ url: fileUrl, title });
   } catch (err: any) {
+    // 生成失败，退金币
+    if (billUserId) {
+      try {
+        const supabase = getSupabase();
+        const { data: row } = await supabase.from('users').select('balance').eq('id', billUserId).maybeSingle();
+        if (row) await supabase.from('users').update({ balance: row.balance + PPT_COINS }).eq('id', billUserId);
+        console.log('[/ppt/generate] 生成失败，已退款', PPT_COINS, '金币');
+      } catch (e: any) { console.error('[/ppt/generate] 退款失败:', e.message); }
+    }
     return NextResponse.json({ error: err.message || '生成失败' }, { status: 500 });
   }
 }

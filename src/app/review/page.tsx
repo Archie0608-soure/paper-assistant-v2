@@ -78,15 +78,19 @@ export default function ReviewPage() {
     }
 
     if (ext === 'pdf') {
-      // 动态加载pdf.js
+      // 动态加载pdf.js legacy版
       if (!(window as any).pdfjsLib) {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.mjs';
-        script.type = 'module';
-        document.head.appendChild(script);
-        await new Promise(r => script.onload = r);
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('PDF库下载失败，请检查网络'));
+          document.head.appendChild(script);
+        });
       }
       const pdfjsLib = (window as any).pdfjsLib;
+      if (!pdfjsLib) throw new Error('PDF解析库加载失败，请刷新重试');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let text = '';
@@ -99,7 +103,14 @@ export default function ReviewPage() {
     }
 
     if (ext === 'ppt') {
-      throw new Error('不支持的格式：旧版PPT文件（.ppt）。请另存为PPT或PPTX格式后重试。');
+      // 旧版 .ppt 格式，发送到服务端解析
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/study/parse-file', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'PPT解析失败');
+      if (!data.text.trim()) throw new Error('未能从PPT中提取到有效文字内容');
+      return data.text;
     }
 
     if (ext === 'pptx') {
@@ -185,7 +196,7 @@ export default function ReviewPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: extractedText, courseName }),
         }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 180000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 300000)),
       ]) as Response;
 
       const data = await res.json().catch(() => { throw new Error('服务器响应无效'); });
@@ -197,7 +208,7 @@ export default function ReviewPage() {
       if (accRes.ok) setAccountData(await accRes.json());
     } catch (err: any) {
       if (err.message === 'TIMEOUT') {
-        setError('生成超时（超过3分钟），请稍后重试');
+        setError('生成超时（超过5分钟），请稍后重试');
         setStep('preview');
       } else {
         setError(err.message || '生成失败，请稍后重试');
@@ -319,7 +330,7 @@ export default function ReviewPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pptx,.pdf,.docx,.txt,.md"
+                accept=".ppt,.pptx,.pdf,.docx,.txt,.md"
                 onChange={handleFileUpload}
                 className="hidden"
               />

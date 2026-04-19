@@ -12,6 +12,20 @@ function getSupabase() {
   return _supabase;
 }
 
+async function getReferenceDocs(docIds: string[], userId: string): Promise<{filename: string; content: string}[]> {
+  if (!docIds?.length) return [];
+  const supabase = getSupabase();
+  const { data } = await supabase.from('reference_docs').select('filename, content').in('id', docIds).eq('user_id', userId);
+  return (data || []) as {filename: string; content: string}[];
+}
+
+function formatReferences(refs: {filename: string; content: string}[]): string {
+  if (!refs.length) return '';
+  return '\n\n【用户上传的参考文献】：\n' + refs.map((r, i) =>
+    `【文献${i+1} - ${r.filename}】：\n${r.content.slice(0, 8000)}`
+  ).join('\n\n') + '\n【重要】：生成时请结合以上文献内容，确保风格和内容与参考资料相符。';
+}
+
 async function callSiliconFlow(messages: any[], temperature = 0.7) {
   const apiKey = process.env.SILICONFLOW_API_KEY || process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('未配置 API Key');
@@ -49,7 +63,7 @@ export async function POST(req: NextRequest) {
     const session = req.cookies.get('pa_session');
     if (!session) return NextResponse.json({ error: '请先登录' }, { status: 401 });
 
-    const { action, text, context, chapterTitle } = await req.json();
+    const { action, text, context, chapterTitle, referenceDocIds } = await req.json();
     if (!text?.trim()) return NextResponse.json({ error: '请提供文本' }, { status: 400 });
     if (!['polish', 'expand'].includes(action)) return NextResponse.json({ error: '无效操作' }, { status: 400 });
 
@@ -66,6 +80,14 @@ export async function POST(req: NextRequest) {
     if (!users?.length) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
     const userId = users[0].id;
+
+    // 获取参考文献内容
+    let refSection = '';
+    if (referenceDocIds?.length) {
+      const refs = await getReferenceDocs(referenceDocIds, userId);
+      refSection = formatReferences(refs);
+    }
+
     const coins = calcCoins(action, text);
     const balance = users[0].balance ?? 0;
 
@@ -73,8 +95,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `金币不足，${action === 'polish' ? '润色' : '扩写'}约需${coins}金币（${countWords(text)}字），当前余额${balance}金币` }, { status: 402 });
     }
 
-    // 扣金币
-    await supabase.from('users').update({ balance: balance - coins }).eq('id', userId).eq('balance', balance);
+    // 扣金币（乐观锁）
+    const deductResult = await supabase.from('users').update({ balance: balance - coins }).eq('id', userId).eq('balance', balance);
+    console.log('[polish] 扣款结果:', JSON.stringify(deductResult), '原余额:', balance, '应扣:', coins);
+    if (deductResult.count !== 1) {
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', userId).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      if (currentBalance < coins) {
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${coins}）` }, { status: 402 });
+      }
+      await supabase.from('users').update({ balance: currentBalance - coins }).eq('id', userId).eq('balance', currentBalance);
+    }
     // 记录交易明细
     await supabase.from('transactions').insert({
       user_id: userId,
@@ -103,7 +134,7 @@ export async function POST(req: NextRequest) {
 
       userPrompt = `请润色以下论文文本（保持原意，只改进表达）：
 
-${text}`;
+${refSection ? refSection + '\n\n' : ''}${text}`;
     } else if (action === 'expand') {
       systemPrompt = `你是一个专业的学术论文写作助手。你的任务是对用户提供的论文文本进行合理扩写，基于上下文增加论述深度和细节。
 
@@ -120,7 +151,7 @@ ${text}`;
       const afterCtx = context?.after ? `\n\n【后文】\n${context.after}` : '';
       userPrompt = `请对以下论文文本进行扩写（基于上下文增加论述深度和细节）：
 
-【待扩写文本】
+${refSection ? refSection + '\n\n' : ''}【待扩写文本】
 ${text}
 ${beforeCtx}${afterCtx}`;
     }

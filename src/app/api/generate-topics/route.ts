@@ -122,6 +122,30 @@ async function callAI(prompt: string) {
 }
 
 
+// ===== 参考文献读取 =====
+async function getReferenceDocs(docIds: string[], userId: string): Promise<{id: string; filename: string; content: string}[]> {
+  if (!docIds || docIds.length === 0) return [];
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+  const { data, error } = await supabase
+    .from('reference_docs')
+    .select('id, filename, content')
+    .in('id', docIds)
+    .eq('user_id', userId);
+  if (error || !data) return [];
+  return data as {id: string; filename: string; content: string}[];
+}
+
+function formatReferences(refs: {filename: string; content: string}[]): string {
+  if (!refs.length) return '';
+  return '\n\n【用户上传的参考文献】：\n' + refs.map((r, i) =>
+    `【文献${i+1} - ${r.filename}】：\n${r.content.slice(0, 8000)}`
+  ).join('\n\n') + '\n【注意】：以上是用户上传的参考文献，在生成论文时请结合这些文献的内容，确保生成内容与用户提供的参考资料相符。';
+}
+
 // ===== 金币扣费逻辑 =====
 function getUserFromSession(req: NextRequest): string | null {
   const session = req.cookies.get('pa_session');
@@ -165,7 +189,14 @@ async function deductCoins(req: NextRequest, action: string, textLength: number)
   if (!user) throw new Error('用户不存在');
   if (user.balance < coins) throw new Error('余额不足，需要' + coins + '金币，当前' + user.balance + '金币');
 
-  await supabase.from('users').update({ balance: user.balance - coins }).eq(userField, userDest);
+  const deductResult = await supabase.from('users').update({ balance: user.balance - coins }).eq(userField, userDest).eq('balance', user.balance);
+  console.log('[generate-topics] 扣款结果:', JSON.stringify(deductResult), '原余额:', user.balance, '应扣:', coins);
+  if (deductResult.count !== 1) {
+    const { data: fresh } = await supabase.from('users').select('balance').eq(userField, userDest).maybeSingle();
+    const currentBalance = fresh?.balance ?? 0;
+    if (currentBalance < coins) throw new Error('金币不足（当前余额' + currentBalance + '，需要' + coins + '）');
+    await supabase.from('users').update({ balance: currentBalance - coins }).eq(userField, userDest).eq('balance', currentBalance);
+  }
   return coins;
 }
 
@@ -234,11 +265,27 @@ export async function POST(req: NextRequest) {
 
     // 生成大纲
     if (action === 'generate-outline' || (body.major && body.topic && !body.chapterTitle)) {
-      const { major, topic, paperType } = body;
+      const { major, topic, paperType, referenceDocIds } = body;
+
+      let refSection = '';
+      if (referenceDocIds?.length) {
+        // 获取当前用户ID
+        const userDest = getUserFromSession(req);
+        if (userDest) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+          const userField = userDest.includes('@') ? 'email' : 'phone';
+          const { data: dbUser } = await supabase.from('users').select('id').eq(userField, userDest).limit(1).maybeSingle();
+          if (dbUser) {
+            const refs = await getReferenceDocs(referenceDocIds, dbUser.id);
+            refSection = formatReferences(refs);
+          }
+        }
+      }
 
       const prompt = `你是一位资深的学术论文指导教师。请为${major}专业的本科学生，针对以下论文主题，生成一份完整的毕业论文大纲。
 
-论文主题：${topic}
+论文主题：${topic}${refSection}
 
 要求：
 1. 符合本科毕业论文的学术规范和篇幅要求
@@ -277,9 +324,25 @@ export async function POST(req: NextRequest) {
 
     // 生成章节内容
     if (action === 'generate-chapter' || body.chapterTitle) {
-      const { topic, chapterTitle, chapterContent, previousChapterSummary, targetWordCount, keywordCount } = body;
+      const { topic, chapterTitle, chapterContent, previousChapterSummary, targetWordCount, keywordCount, referenceDocIds } = body;
       const wordTarget = targetWordCount || 1000;
       const kCount = keywordCount || 5;
+
+      // 获取参考文献内容
+      let refSection = '';
+      if (referenceDocIds?.length) {
+        const userDest = getUserFromSession(req);
+        if (userDest) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+          const userField = userDest.includes('@') ? 'email' : 'phone';
+          const { data: dbUser } = await supabase.from('users').select('id').eq(userField, userDest).limit(1).maybeSingle();
+          if (dbUser) {
+            const refs = await getReferenceDocs(referenceDocIds, dbUser.id);
+            refSection = formatReferences(refs);
+          }
+        }
+      }
 
       // 关键词章节特殊处理
       if (chapterTitle.toLowerCase().includes('关键词') || chapterTitle.toLowerCase().includes('keyword')) {
@@ -299,6 +362,8 @@ export async function POST(req: NextRequest) {
       }
 
       const prompt = `你是一位帮助本科生写论文的助教。用户正在写一篇关于"${topic}"的毕业论文。
+
+${refSection}
 
 上一章节概要：${previousChapterSummary || '无'}
 

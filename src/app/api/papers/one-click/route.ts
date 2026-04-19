@@ -12,6 +12,20 @@ function getSupabase() {
   return _supabase;
 }
 
+async function getReferenceDocs(docIds: string[], userId: string): Promise<{filename: string; content: string}[]> {
+  if (!docIds?.length) return [];
+  const supabase = getSupabase();
+  const { data } = await supabase.from('reference_docs').select('filename, content').in('id', docIds).eq('user_id', userId);
+  return (data || []) as {filename: string; content: string}[];
+}
+
+function formatReferences(refs: {filename: string; content: string}[]): string {
+  if (!refs.length) return '';
+  return '\n\n【用户上传的参考文献】：\n' + refs.map((r, i) =>
+    `【文献${i+1} - ${r.filename}】：\n${r.content.slice(0, 8000)}`
+  ).join('\n\n') + '\n【重要】：请结合以上用户上传的参考文献内容来生成论文，确保论文内容与参考资料相符。';
+}
+
 // 学历对应的参考字数
 const WORD_COUNT_MAP: Record<string, number> = {
   bachelor: 8000,   // 本科
@@ -53,9 +67,10 @@ async function runOneClickGeneration(paperId: string, params: {
   major?: string;
   userId?: string;
   estimatedCost?: number;
+  referenceDocIds?: string[];
 }) {
   const supabase = getSupabase();
-  const { title, degree, targetWords, major } = params;
+  const { title, degree, targetWords, major, referenceDocIds } = params;
 
   const updateProgress = async (progress: number, status: string = 'generating', content?: string) => {
     const update: any = { progress, status };
@@ -66,12 +81,16 @@ async function runOneClickGeneration(paperId: string, params: {
   try {
     await updateProgress(5);
 
+    // 获取参考文献
+    const refs = referenceDocIds?.length ? await getReferenceDocs(referenceDocIds, params.userId || '') : [];
+    const refSection = formatReferences(refs);
+
     // Step 1: 生成大纲
     const outlinePrompt = `你是一个专业的学术论文写作助手。请为以下论文标题生成一个完整的论文大纲。
 
 标题：${title}
 学历层次：${degree === 'bachelor' ? '本科' : degree === 'master' ? '硕士' : '博士'}论文
-专业：${major || '通用'}
+专业：${major || '通用'}${refSection}
 
 要求：
 1. 包含以下标准章节：摘要、绪论/引言、理论基础/文献综述、研究方法、问题分析/数据收集、模型构建/实证分析、结论与展望
@@ -116,6 +135,8 @@ async function runOneClickGeneration(paperId: string, params: {
       const progressBase = 25 + Math.floor((i / totalChapters) * 65);
 
       const chapterPrompt = `你是一个专业的学术论文写作助手。请根据以下大纲，为"${chapter.title}"章节生成完整的学术论文内容。
+
+${refSection}
 
 章节标题：${chapter.title}
 章节说明：${chapter.desc}
@@ -241,7 +262,7 @@ export async function POST(req: NextRequest) {
     const destination = dest || beforeLast;
     const userField = type === 'email' ? 'email' : 'phone';
 
-    const { title, degree, targetWords, major } = await req.json();
+    const { title, degree, targetWords, major, referenceDocIds } = await req.json();
 
     if (!title?.trim()) {
       return NextResponse.json({ error: '请输入论文标题' }, { status: 400 });
@@ -292,11 +313,22 @@ export async function POST(req: NextRequest) {
 
     if (insertErr) throw insertErr;
 
-    // 扣金币（预估）
-    await supabase.from('users')
+    // 扣金币（乐观锁）
+    const deductResult = await supabase.from('users')
       .update({ balance: users[0].balance - estimatedCost })
       .eq('id', userId)
       .eq('balance', users[0].balance);
+    console.log('[one-click] 扣款结果:', JSON.stringify(deductResult), '原余额:', users[0].balance, '应扣:', estimatedCost);
+    if (deductResult.count !== 1) {
+      const { data: fresh } = await supabase.from('users').select('balance').eq('id', userId).maybeSingle();
+      const currentBalance = fresh?.balance ?? 0;
+      if (currentBalance < estimatedCost) {
+        // 回滚论文记录
+        await supabase.from('papers').delete().eq('id', paper.id);
+        return NextResponse.json({ error: `金币不足（当前余额${currentBalance}，需要${estimatedCost}）` }, { status: 402 });
+      }
+      await supabase.from('users').update({ balance: currentBalance - estimatedCost }).eq('id', userId).eq('balance', currentBalance);
+    }
     // 记录交易
     await supabase.from('transactions').insert({
       user_id: userId,
@@ -307,7 +339,7 @@ export async function POST(req: NextRequest) {
 
     // 立即返回，不等待生成完成
     // 使用 fire-and-forget 模式（Netlify Functions 会保持运行一段时间）
-    runOneClickGeneration(paper.id, { title, degree, targetWords: words, major, userId, estimatedCost }).catch(console.error);
+    runOneClickGeneration(paper.id, { title, degree, targetWords: words, major, userId, estimatedCost, referenceDocIds }).catch(console.error);
 
     return NextResponse.json({
       success: true,

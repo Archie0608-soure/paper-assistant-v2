@@ -108,7 +108,9 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const category = searchParams.get('category');
-    const templates = getTemplates();
+    let templates = getTemplates();
+    // 添加 index 序号（用于PPT页面显示）
+    templates = templates.map((t: any, i: number) => ({ ...t, index: templates.length - i }));
     if (category && category !== '全部') {
       return NextResponse.json({ templates: templates.filter((t: any) => t.category === category) });
     }

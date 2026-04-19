@@ -38,6 +38,10 @@ function EditorContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAction, setAiAction] = useState<string | null>(null);
   const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [showRefs, setShowRefs] = useState(false);
+  const [refDocs, setRefDocs] = useState<any[]>([]);
+  const [selectedRefIds, setSelectedRefIds] = useState<string[]>([]);
+  const [refUploading, setRefUploading] = useState(false);
 
   const loadPaper = useCallback(async () => {
     if (!paperId) { setLoading(false); return; }
@@ -96,6 +100,15 @@ function EditorContent() {
 
   useEffect(() => { loadPaper(); }, [loadPaper]);
 
+  // 加载参考文献列表
+  useEffect(() => {
+    if (!showRefs) return;
+    fetch('/api/reference/upload', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => { if (data.docs) setRefDocs(data.docs); })
+      .catch(() => {});
+  }, [showRefs]);
+
   const savePaper = useCallback(async (updatedChapters?: Chapter[], updatedTitle?: string) => {
     if (!paperId) return;
     setSaving(true);
@@ -127,6 +140,45 @@ function EditorContent() {
     const timer = setTimeout(() => savePaper(), 2000);
     return () => clearTimeout(timer);
   }, [chapters, title, savePaper, paperId]);
+
+  // 上传参考文献
+  const handleRefUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setRefUploading(true);
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+    try {
+      const res = await fetch('/api/reference/upload', { method: 'POST', credentials: 'include', body: formData });
+      const data = await res.json();
+      if (data.results) {
+        const ok = data.results.filter((r: any) => r.status === 'ok');
+        if (ok.length > 0) {
+          // 重新加载列表
+          const listRes = await fetch('/api/reference/upload', { credentials: 'include' });
+          const listData = await listRes.json();
+          if (listData.docs) setRefDocs(listData.docs);
+        }
+        if (data.message) alert(data.message);
+      }
+    } catch { alert('上传失败'); }
+    finally { setRefUploading(false); e.target.value = ''; }
+  };
+
+  // 删除参考文献
+  const handleRefDelete = async (id: string) => {
+    if (!confirm('确定删除这篇文献？')) return;
+    try {
+      await fetch(`/api/reference/upload?id=${id}`, { method: 'DELETE', credentials: 'include' });
+      setRefDocs(prev => prev.filter(d => d.id !== id));
+      setSelectedRefIds(prev => prev.filter(i => i !== id));
+    } catch { alert('删除失败'); }
+  };
+
+  // 切换选中文献
+  const toggleRef = (id: string) => {
+    setSelectedRefIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
 
   const updateChapter = (idx: number, content: string) => {
     const updated = [...chapters];
@@ -209,6 +261,7 @@ function EditorContent() {
           text,
           context: { before: beforePara.slice(-500), after: afterPara.slice(0, 500) },
           chapterTitle: active.title,
+          referenceDocIds: selectedRefIds,
         }),
       });
       const data = await res.json();
@@ -272,6 +325,10 @@ function EditorContent() {
           <BookOpen className="w-4 h-4" /><span>{formatLabel}</span>
         </div>
         <div className="text-sm text-slate-500">{totalWords.toLocaleString()} 字</div>
+        <button onClick={() => setShowRefs(!showRefs)}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition text-sm font-medium">
+          <BookOpen className="w-4 h-4" /><span>参考文献{selectedRefIds.length > 0 ? ` (${selectedRefIds.length})` : ''}</span>
+        </button>
         <button onClick={() => savePaper()} disabled={saving}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : lastSaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
@@ -282,6 +339,50 @@ function EditorContent() {
           <FileDown className="w-4 h-4" /><span className="text-sm">导出</span>
         </button>
       </header>
+
+      {/* 参考文献管理面板 */}
+      {showRefs && (
+        <div className="bg-white border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-slate-800">参考文献管理</h3>
+              <p className="text-xs text-slate-500 mt-0.5">上传文献后，生成章节时 AI 会自动参考这些资料（最多10个文献）</p>
+            </div>
+            <button onClick={() => setShowRefs(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition cursor-pointer text-sm">
+              {refUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              <span>{refUploading ? '上传中...' : '上传文献'}</span>
+              <input type="file" accept=".pdf,.docx,.txt" multiple className="hidden" onChange={handleRefUpload} disabled={refUploading} />
+            </label>
+            <span className="text-xs text-slate-400">支持 PDF、Word、TXT，单文件不超过5MB，最多10个文件</span>
+          </div>
+          {refDocs.length > 0 ? (
+            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+              {refDocs.map(doc => (
+                <div key={doc.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm cursor-pointer transition ${
+                  selectedRefIds.includes(doc.id)
+                    ? 'bg-amber-50 border-amber-400 text-amber-700'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                }`} onClick={() => toggleRef(doc.id)}>
+                  <span className="text-xs truncate max-w-32">📄 {doc.filename}</span>
+                  {selectedRefIds.includes(doc.id) && <Check className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+                  <button onClick={(e) => { e.stopPropagation(); handleRefDelete(doc.id); }}
+                    className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">暂无文献，点击"上传文献"添加</p>
+          )}
+          {selectedRefIds.length > 0 && (
+            <p className="text-xs text-amber-600 mt-2">✅ 已选择 {selectedRefIds.length} 篇文献，生成章节时将参考这些资料</p>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* 左侧：章节列表 */}
