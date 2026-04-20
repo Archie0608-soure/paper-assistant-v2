@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     if (!filePath) return NextResponse.json({ error: '缺少文件路径' }, { status: 400 });
 
     // 安全检查：只允许 templates 目录下的文件
-    const fullPath = path.join(process.cwd(), 'public', filePath);
+    const fullPath = path.join('/home/ubuntu/paper-assistant-v2', 'public', filePath);
     if (!fullPath.includes('templates') || !fs.existsSync(fullPath)) {
       return NextResponse.json({ error: '文件不存在' }, { status: 404 });
     }

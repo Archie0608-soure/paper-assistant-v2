@@ -233,7 +233,7 @@ export default function Home() {
   const [reviewResult, setReviewResult] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewFileLoading, setReviewFileLoading] = useState(false);
-  const [reviewFileName, setReviewFileName] = useState('');
+  const [reviewFileNames, setReviewFileNames] = useState<string[]>([]);
   const [reviewError, setReviewError] = useState('');
   const [reviewCopied, setReviewCopied] = useState(false);
   const reviewFileRef = useRef<HTMLInputElement>(null);
@@ -264,6 +264,8 @@ export default function Home() {
   const [oneClickLoading, setOneClickLoading] = useState(false);
   const [oneClickError, setOneClickError] = useState<string | null>(null);
   const [oneClickSuccess, setOneClickSuccess] = useState(false);
+  const [oneClickRefFiles, setOneClickRefFiles] = useState<File[]>([]);
+  const oneClickFileRef = useRef<HTMLInputElement>(null);
 
   // 一键生成时自动刷新论文历史进度
   useEffect(() => {
@@ -677,6 +679,14 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // 一键生成：处理文献上传（支持多文件）
+  const handleOneClickRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, 20);
+    if (!files.length) return;
+    setOneClickRefFiles(files);
+    if (oneClickFileRef.current) oneClickFileRef.current.value = '';
   };
 
   // 一键生成
@@ -1117,28 +1127,107 @@ export default function Home() {
   // 复习资料：解析文件
   const parseReviewFile = async (file: File): Promise<string> => {
     const ext = file.name.split('.').pop()?.toLowerCase();
+
     if (ext === 'txt' || ext === 'md') {
       return await file.text();
     }
+
     if (ext === 'docx') {
       const arrayBuffer = await file.arrayBuffer();
       const { value } = await mammoth.extractRawText({ arrayBuffer });
       return value;
     }
-    throw new Error('仅支持 .txt .md .docx 格式（页面嵌入模式），如需解析PPT/PDF请前往复习资料页面');
+
+    if (ext === 'ppt') {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/study/parse-file', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'PPT解析失败');
+      if (!data.text.trim()) throw new Error('未能从PPT中提取到有效文字内容');
+      return data.text;
+    }
+
+    if (ext === 'pptx') {
+      const loadJSZip = (): Promise<any> => {
+        return new Promise((resolve, reject) => {
+          if ((window as any).JSZip) { resolve((window as any).JSZip); return; }
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+          script.onload = () => resolve((window as any).JSZip);
+          script.onerror = () => reject(new Error('JSZip库加载失败，请检查网络后重试'));
+          document.head.appendChild(script);
+        });
+      };
+      const JSZipLib = await loadJSZip();
+      const zip = await Promise.race([
+        JSZipLib.loadAsync(file),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('文件解析超时（60秒），文件可能过大或已损坏')), 60000)),
+      ]) as any;
+      const slideTexts: Array<{ num: number; text: string }> = [];
+      const slideRegex = /ppt\/slides\/slide(\d+)\.xml/;
+      const promises = Object.entries(zip.files)
+        .filter(([path, entry]: [string, any]) => !entry.dir && slideRegex.test(path))
+        .map(async ([path, entry]: [string, any]) => {
+          const num = parseInt(slideRegex.exec(path)?.[1] || '0');
+          const xml = await entry.async('string');
+          const text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          return { num, text };
+        });
+      const results = await Promise.all(promises);
+      const combined = results.filter(r => r.text).sort((a, b) => a.num - b.num).map(r => r.text).join('\n');
+      if (!combined.trim()) throw new Error('未能从PPTX中提取到有效文字内容');
+      return combined;
+    }
+
+    if (ext === 'pdf') {
+      if (!(window as any).pdfjsLib) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('PDF库下载失败，请检查网络'));
+          document.head.appendChild(script);
+        });
+      }
+      const pdfjsLib = (window as any).pdfjsLib;
+      if (!pdfjsLib) throw new Error('PDF解析库加载失败，请刷新重试');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map((item: any) => item.str).join(' ') + '\n';
+      }
+      if (!text.trim()) throw new Error('未能从PDF中提取到有效文字内容');
+      return text;
+    }
+
+    throw new Error('仅支持 .txt .md .docx .ppt .pptx .pdf 格式');
   };
 
-  // 复习资料：处理文件上传
+  // 复习资料：处理文件上传（支持多文件）
   const handleReviewFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setReviewFileName(file.name);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (files.length > 20) { setReviewError('最多同时上传20个文件'); return; }
     setReviewFileLoading(true);
     setReviewError('');
     try {
-      const text = await parseReviewFile(file);
-      if (!text.trim()) { throw new Error('无法从文件中提取文字内容'); }
-      setReviewExtractedText(text.slice(0, 8000));
+      const texts: string[] = [];
+      const names: string[] = [];
+      for (const file of files) {
+        const text = await parseReviewFile(file);
+        if (!text.trim()) throw new Error(`"${file.name}" 未能提取到有效文字内容`);
+        texts.push(text.slice(0, 8000));
+        names.push(file.name);
+      }
+      // 追加到现有内容
+      const combined = texts.join('\n\n---文件分割---\n\n');
+      setReviewExtractedText(prev => (prev ? prev + '\n\n' + combined : combined).slice(0, 8000));
+      setReviewFileNames(prev => [...new Set([...prev, ...names])].slice(0, 20));
       setReviewStep('preview');
     } catch (err: any) {
       setReviewError(err.message || '文件解析失败');
@@ -1185,17 +1274,30 @@ export default function Home() {
     try { await navigator.clipboard.writeText(reviewResult); setReviewCopied(true); setTimeout(() => setReviewCopied(false), 2000); } catch {}
   };
 
-  // 复习资料：下载
-  const handleReviewDownload = () => {
-    const blob = new Blob([reviewResult], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${reviewCourseName || '复习资料'}_复习大纲.md`; a.click(); URL.revokeObjectURL(url);
+  // 复习资料：下载为Word文档
+  const handleReviewDownload = async () => {
+    try {
+      const res = await fetch('/api/study/download', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: reviewResult, courseName: reviewCourseName }),
+      });
+      if (!res.ok) throw new Error('下载失败');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url;
+      a.download = `${reviewCourseName || '复习资料'}_复习大纲.docx`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || '下载失败，请稍后重试');
+    }
   };
 
   // 复习资料：重置
   const handleReviewReset = () => {
     setReviewCourseName(''); setReviewExtractedText(''); setReviewResult('');
-    setReviewFileName(''); setReviewError(''); setReviewStep('upload');
+    setReviewFileNames([]); setReviewError(''); setReviewStep('upload');
   };
 
   // 降重降AI：文件上传
@@ -2072,6 +2174,34 @@ export default function Home() {
                   />
                 </div>
 
+                {/* 文献上传（选填） */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    参考文献上传（选填，最多20个文件）
+                  </label>
+                  <input ref={oneClickFileRef} type="file" accept=".txt,.docx,.pdf,.ppt,.pptx" multiple
+                    onChange={handleOneClickRefUpload} className="hidden" />
+                  <button onClick={() => oneClickFileRef.current?.click()}
+                    className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center gap-1 hover:border-indigo-400 hover:bg-indigo-50/30 transition text-sm">
+                    <Upload className="w-5 h-5 text-slate-400" />
+                    {oneClickRefFiles.length > 0
+                      ? <span className="text-indigo-600 font-medium">{oneClickRefFiles.length} 个文件已选择</span>
+                      : <span className="text-slate-500">点击上传参考文献 TXT/DOCX/PDF/PPT/PPTX</span>
+                    }
+                  </button>
+                  {oneClickRefFiles.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {oneClickRefFiles.map((f, i) => (
+                        <span key={i} className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs flex items-center gap-1">
+                          <FileText className="w-3 h-3" />{f.name}
+                          <button onClick={() => setOneClickRefFiles(prev => prev.filter((_, j) => j !== i))}
+                            className="hover:text-red-600 ml-1">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {oneClickError && (
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                     {oneClickError}
@@ -2700,19 +2830,24 @@ export default function Home() {
                   ) : (
                     <div className="border border-slate-200 rounded-xl overflow-hidden">
                       <div className="flex gap-2 p-3 overflow-x-auto" style={{scrollbarWidth:'none'}}>
-                        {pptTemplates.slice(0,20).map((t: any) => (
+                        {pptTemplates.slice(0,20).map((t: any) => {
+                          const thumbName = (t.file || '/templates/' + t.name).replace('.pptx', '.png').replace('/templates/', '/templates/thumbs/');
+                          return (
                           <button key={t.id} onClick={() => setPptSelectedTemplate(t)}
                             className="flex-shrink-0 rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all"
-                            title={`[${t.index}] ${t.name}`}>
-                            <div className="flex h-10">
-                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.primary}} />
-                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.secondary}} />
-                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.accent}} />
-                              <div className="w-5" style={{backgroundColor: '#' + t.colors?.bg}} />
-                            </div>
-                            <div className="text-center text-xs font-bold text-indigo-600 px-0.5 py-0.5">{t.index}</div>
-                          </button>
-                        ))}
+                            title={`[${t.index || t.name}] ${t.name}`}>
+                            <img
+                              src={thumbName}
+                              alt={t.name}
+                              className="w-20 h-12 object-cover"
+                              onError={(e) => {
+                                const parent = (e.target as HTMLImageElement).parentElement;
+                                if (parent) parent.style.display = 'none';
+                              }}
+                            />
+                            <div className="text-center text-xs font-bold text-indigo-600 px-0.5 py-0.5">{t.index || t.name?.slice(0,6)}</div>
+                          </button>);
+                        })}
                       </div>
                       <div className="px-3 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-500">
                         共 {pptTemplates.length} 个模板
@@ -2915,18 +3050,22 @@ export default function Home() {
                 <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
                   <h3 className="text-sm font-semibold text-slate-800 mb-2">上传课程资料</h3>
                   <p className="text-xs text-slate-500 mb-3">支持 TXT、Word（.docx）格式，推荐上传PPT课件或PDF</p>
-                  <input ref={reviewFileRef} type="file" accept=".txt,.docx,.md"
+                  <input ref={reviewFileRef} type="file" accept=".txt,.docx,.md,.pdf,.ppt,.pptx" multiple
                     onChange={handleReviewFileUpload} className="hidden" />
                   <button onClick={() => reviewFileRef.current?.click()} disabled={reviewFileLoading}
                     className="w-full py-6 border-2 border-dashed border-indigo-300 rounded-xl flex flex-col items-center gap-2 hover:border-indigo-500 hover:bg-indigo-50/50 transition disabled:opacity-50 cursor-pointer">
                     {reviewFileLoading ? (
-                      <><Loader2 className="w-8 h-8 text-indigo-400 animate-spin" /><p className="text-sm text-slate-500">正在解析文件...</p></>
+                      <><Loader2 className="w-8 h-8 text-indigo-400 animate-spin" /><p className="text-sm text-slate-500">正在解析 {reviewFileNames.length > 0 ? reviewFileNames.length : ''} 个文件...</p></>
                     ) : (
-                      <><Upload className="w-8 h-8 text-indigo-400" /><p className="text-sm text-slate-500">点击上传课程资料</p><p className="text-xs text-slate-400">TXT · DOCX · MD</p></>
+                      <><Upload className="w-8 h-8 text-indigo-400" /><p className="text-sm text-slate-500">点击上传课程资料（最多20个文件）</p><p className="text-xs text-slate-400">TXT · DOCX · MD · PDF · PPT · PPTX</p></>
                     )}
                   </button>
-                  {reviewFileName && !reviewFileLoading && (
-                    <p className="mt-2 text-sm text-green-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" />已选择: {reviewFileName}</p>
+                  {reviewFileNames.length > 0 && !reviewFileLoading && (
+                    <div className="mt-2 space-y-1">
+                      {reviewFileNames.map((n, i) => (
+                        <p key={i} className="text-sm text-green-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" />{n}</p>
+                      ))}
+                    </div>
                   )}
                 </div>
 

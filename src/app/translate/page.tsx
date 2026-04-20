@@ -19,14 +19,31 @@ const LANGUAGES = [
   { code: 'vi', label: 'Tiếng Việt' },
 ];
 
-function downloadFile(filename: string, text: string) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+function downloadDocx(text: string, filename: string) {
+  fetch('/api/study/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, courseName: filename }),
+  })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename + '_翻译.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => {
+      // fallback txt
+      const b = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const u = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = filename + '_翻译.txt';
+      a.click();
+      URL.revokeObjectURL(u);
+    });
 }
 
 export default function TranslatePage() {
@@ -154,9 +171,9 @@ export default function TranslatePage() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
               <span className="text-sm text-gray-500">译文 {resultText.length} 字符</span>
-              <button onClick={() => downloadFile(`翻译_${Date.now()}.txt`, resultText)}
+              <button onClick={() => downloadDocx(resultText, '翻译_' + fromLang + '_to_' + toLang)}
                 className="flex items-center gap-1 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-                <Download className="w-3 h-3" /> 下载
+                <Download className="w-3 h-3" /> 下载docx
               </button>
             </div>
             <textarea value={resultText} readOnly
