@@ -6,23 +6,20 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ADMIN_KEY = process.env.ADMIN_API_KEY;
-const ADMIN_BACKEND_PASSWORD = process.env.ADMIN_BACKEND_PASSWORD;
+function isAdminAuthenticated(req: NextRequest): boolean {
+  const token = req.cookies.get('pa_admin_session');
+  return token?.value === 'authenticated';
+}
 
 // 管理员调整用户余额
 export async function POST(req: NextRequest) {
-  // 管理员密钥校验（双重认证）
-  const adminKey = req.headers.get('X-Admin-Key');
-  const body = await req.json();
-  const { admin_password, user_email, amount, reason } = body;
-  if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
-    return NextResponse.json({ error: '无权访问' }, { status: 403 });
-  }
-  if (!ADMIN_BACKEND_PASSWORD || admin_password !== ADMIN_BACKEND_PASSWORD) {
-    return NextResponse.json({ error: '后台密码错误' }, { status: 403 });
+  // Cookie 认证
+  if (!isAdminAuthenticated(req)) {
+    return NextResponse.json({ error: '未登录或无权限' }, { status: 403 });
   }
 
   try {
+    const { user_email, amount, reason } = await req.json();
 
     if (!user_email || amount === undefined) {
       return NextResponse.json({ error: '缺少参数' }, { status: 400 });
@@ -82,16 +79,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET: 检查 admin key + 后台密码是否有效
+// GET: 检查 admin session 是否有效
 export async function GET(req: NextRequest) {
-  const adminKey = req.headers.get('X-Admin-Key');
-  const { searchParams } = new URL(req.url);
-  const admin_password = searchParams.get('admin_password') || '';
-  if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
-    return NextResponse.json({ error: '无权访问' }, { status: 403 });
+  if (!isAdminAuthenticated(req)) {
+    return NextResponse.json({ error: '未登录' }, { status: 401 });
   }
-  if (!ADMIN_BACKEND_PASSWORD || admin_password !== ADMIN_BACKEND_PASSWORD) {
-    return NextResponse.json({ error: '后台密码错误' }, { status: 403 });
-  }
-  return NextResponse.json({ ok: true, message: 'Admin auth valid' });
+  return NextResponse.json({ ok: true, message: 'Admin authenticated' });
 }

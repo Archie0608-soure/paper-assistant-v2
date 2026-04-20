@@ -1,13 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminBalancePage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/admin/check-session');
+        if (!res.ok) router.replace('/admin');
+      } catch {
+        router.replace('/admin');
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,11 +33,7 @@ export default function AdminBalancePage() {
       const res = await fetch('/api/admin/adjust-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_email: email,
-          amount: Number(amount),
-          reason,
-        }),
+        body: JSON.stringify({ user_email: email, amount: Number(amount), reason }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '操作失败');
@@ -35,9 +45,22 @@ export default function AdminBalancePage() {
     }
   };
 
+  const handleLogout = async () => {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    router.replace('/admin');
+  };
+
   return (
-    <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>🎛️ 管理员 - 余额调整</h1>
+    <div style={{ padding: '40px', maxWidth: '700px', margin: '0 auto' }}>
+      <div className="flex items-center justify-between mb-8">
+        <h1>🎛️ 管理员后台 - 余额调整</h1>
+        <button
+          onClick={handleLogout}
+          style={{ padding: '8px 16px', background: '#374151', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+        >
+          退出登录
+        </button>
+      </div>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
         <div>
