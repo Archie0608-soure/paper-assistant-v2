@@ -121,12 +121,16 @@ export async function POST(req: NextRequest) {
     fd.append('file', new Blob([buffer as unknown as BlobPart]), fileName);
     fd.append('FileName', fileName);
     fd.append('username', SPEEDAI_API_KEY);
-    // 映射我们的模式到 SpeedAI 的 mode
-    const speedaiMode = effectiveMode === 'plagiarism' ? 'plagiarism'
+    // 映射我们的模式到 SpeedAI 的 mode/type_
+    // plagiarism->rewrite, ai->deai, both->deai+rewrite_前缀
+    const speedaiMode = effectiveMode === 'plagiarism' ? 'rewrite'
       : effectiveMode === 'ai' ? 'deai'
-      : 'both';
+      : 'deai'; // both 也用 deai
+    const speedaiType = effectiveMode === 'both'
+      ? 'rewrite_' + effectivePlatform
+      : effectivePlatform;
     fd.append('mode', speedaiMode);
-    fd.append('type_', effectivePlatform);
+    fd.append('type_', speedaiType);
     fd.append('changed_only', String(false));
     fd.append('skip_english', effectiveLang === 'chinese' ? String(true) : String(false));
 
@@ -150,13 +154,13 @@ export async function POST(req: NextRequest) {
 
     const docId = costData.doc_id as string;
 
-    // 启动处理
+    // 启动处理（与 cost 接口保持一致）
     const startFd = new FormData();
     startFd.append('doc_id', docId);
     startFd.append('FileName', fileName);
     startFd.append('username', SPEEDAI_API_KEY);
-    startFd.append('mode', 'deai');
-    startFd.append('type_', effectivePlatform);
+    startFd.append('mode', speedaiMode);
+    startFd.append('type_', speedaiType);
     startFd.append('changed_only', String(false));
     startFd.append('skip_english', effectiveLang === 'chinese' ? String(true) : String(false));
 
