@@ -59,13 +59,15 @@ function splitText(text: string, maxChars: number = 1800): string[] {
 }
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
-  if (!text || !text.trim()) { console.log('[translateChunk] 空文本，跳过'); return ''; }
+  // 过滤空文本和只含PARA_MARKER的非法chunk
+  const cleanText = text.replace(/\x00PARA\x00/g, '').trim();
+  if (!cleanText) { console.log('[translateChunk] chunk为空或仅含段落标记，跳过'); return ''; }
   const salt = Date.now().toString() + Math.random().toString(36).slice(2, 8);
-  const sign = buildSignature(APP_ID, text, salt, SECRET_KEY);
-  console.log('[translateChunk] 实际发送文本长度:', text.trim().length, '首50字:', JSON.stringify(text.trim().slice(0, 50)));
+  const sign = buildSignature(APP_ID, cleanText, salt, SECRET_KEY);
+  console.log('[translateChunk] 实际发送文本长度:', cleanText.length, '首50字:', JSON.stringify(cleanText.slice(0, 50)));
 
   const params = new URLSearchParams({
-    q: text,
+    q: cleanText,
     from: LANG_MAP[from] || from,
     to: LANG_MAP[to] || to,
     appid: APP_ID,
@@ -73,7 +75,7 @@ async function translateChunk(text: string, from: string, to: string): Promise<s
     sign,
   });
 
-  const res = await fetch('http://api.fanyi.baidu.com/api/trans/vip/translate', {
+  const res = await fetch('https://api.fanyi.baidu.com/api/trans/vip/translate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
