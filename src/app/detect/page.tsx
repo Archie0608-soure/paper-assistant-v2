@@ -32,8 +32,33 @@ export default function DetectPage() {
   const [accountData, setAccountData] = useState<any>(null);
   const [reasonsExpanded, setReasonsExpanded] = useState(true);
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [lang, setLang] = useState<'cn' | 'en'>('cn');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 各平台严格度：正数=比基准更严(加AI率)，负数=更松(减AI率)
+  const allPlatforms: Record<string, { label: string; delta: number; desc: string; color: string }> = {
+    // 中文平台
+    'sim-zhiwang-cn': { label: '模拟知网',    delta: +6, desc: '最严格',  color: 'text-red-600' },
+    'sim-dayan-cn':   { label: '模拟大雅',    delta: +3, desc: '较严格',  color: 'text-orange-600' },
+    'sim-weipu-cn':   { label: '模拟维普',    delta:  0, desc: '标准严格', color: 'text-slate-600' },
+    'sim-wanfang-cn': { label: '模拟万方',    delta: -4, desc: '较宽松',  color: 'text-green-600' },
+    'sim-gezida-cn':  { label: '模拟格子达',  delta: -7, desc: '最宽松',  color: 'text-blue-600' },
+    // 英文平台
+    'sim-turnitin-en': { label: '模拟Turnitin', delta: +5, desc: '最严格',  color: 'text-red-600' },
+    'sim-zhiwang-en': { label: '模拟知网(英)', delta: +3, desc: '较严格',  color: 'text-orange-600' },
+    'sim-weipu-en':   { label: '模拟维普(英)', delta:  0, desc: '标准严格', color: 'text-slate-600' },
+    'sim-gezida-en':  { label: '模拟格子达(英)', delta: -5, desc: '较宽松', color: 'text-blue-600' },
+  };
+  const [platform, setPlatform] = useState<string>('sim-zhiwang-cn');
+  const platformOptions = Object.entries(allPlatforms)
+    .filter(([key]) => key.endsWith(`-${lang}`))
+    .map(([key, val]) => ({ key, ...val }));
+
+  // 根据选择平台调整显示的AI率
+  const currentPlatform = allPlatforms[platform];
+  const displayAi = result ? Math.min(100, Math.max(0, result.ai + (currentPlatform?.delta ?? 0))) : null;
+  const displayOrig = displayAi !== null ? 100 - displayAi : null;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -143,10 +168,10 @@ export default function DetectPage() {
     setUploadedFileName('');
   };
 
-  const aiLevel = result
-    ? result.ai >= 80 ? 'high'
-      : result.ai >= 50 ? 'medium'
-      : result.ai >= 20 ? 'low'
+  const aiLevel = displayAi !== null
+    ? displayAi >= 80 ? 'high'
+      : displayAi >= 50 ? 'medium'
+      : displayAi >= 20 ? 'low'
       : 'human'
     : null;
 
@@ -165,11 +190,13 @@ export default function DetectPage() {
   };
 
   const handlePrintReport = () => {
-    if (!result) return;
+    if (!result || displayAi === null) return;
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     const levelLabel: Record<string,string> = { high: 'AI痕迹明显', medium: 'AI特征较重', low: '疑似AI特征', human: '人类写作' };
     const aiTag = aiLevel ? levelLabel[aiLevel] : '';
+    const pLabel = currentPlatform?.label ?? '';
+    const pDelta = currentPlatform?.delta ?? 0;
 
     const sentencesHtml = result.sentences.map((s, i) => {
       const cm = colorMap[s.color];
@@ -189,10 +216,10 @@ export default function DetectPage() {
       </div>`;
     }).join('');
 
-    const aiBg = result.ai >= 80 ? '#fef2f2' : result.ai >= 50 ? '#fff7ed' : result.ai >= 20 ? '#fefce8' : '#f0fdf4';
-    const aiColor = result.ai >= 80 ? '#dc2626' : result.ai >= 50 ? '#ea580c' : result.ai >= 20 ? '#ca8a04' : '#16a34a';
-    const origBg = result.original >= 80 ? '#f0fdf4' : result.original >= 50 ? '#fff7ed' : '#fefce8';
-    const origColor = result.original >= 80 ? '#16a34a' : result.original >= 50 ? '#ea580c' : '#ca8a04';
+    const aiBg = displayAi >= 80 ? '#fef2f2' : displayAi >= 50 ? '#fff7ed' : displayAi >= 20 ? '#fefce8' : '#f0fdf4';
+    const aiColor = displayAi >= 80 ? '#dc2626' : displayAi >= 50 ? '#ea580c' : displayAi >= 20 ? '#ca8a04' : '#16a34a';
+    const origBg = displayOrig! >= 80 ? '#f0fdf4' : displayOrig! >= 50 ? '#fff7ed' : '#fefce8';
+    const origColor = displayOrig! >= 80 ? '#16a34a' : displayOrig! >= 50 ? '#ea580c' : '#ca8a04';
 
     const win = window.open('', '_blank');
     if (!win) return;
@@ -226,11 +253,11 @@ export default function DetectPage() {
 <body>
   <div class="header">
     <div class="title">📋 AI率检测报告</div>
-    <div class="subtitle">Paper Assistant 智能检测平台</div>
+    <div class="subtitle">Paper Assistant 智能检测平台 · ${pLabel}</div>
     <div class="meta">
       <span>🕐 检测时间:${dateStr}</span>
       <span>📝 文本字数:${text.length} 字</span>
-      <span>🔍 检测引擎:腾讯云AI率 + DeepSeek句子分析</span>
+      <span>🔍 基准引擎:腾讯云+DeepSeek${pDelta !== 0 ? `(${pDelta > 0 ? '+' : ''}${pDelta}% 平台调整)` : ''}</span>
     </div>
   </div>
 
@@ -317,13 +344,47 @@ export default function DetectPage() {
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* 标题 */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium mb-4">
             <Zap className="w-4 h-4" />
             想知道你的文字有多"假"?
           </div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">AI率检测</h1>
           <p className="text-slate-500 text-sm">粘贴文字,精准检测AI生成内容概率(附句子级报告)</p>
+
+          {/* 中英文 + 平台选择 */}
+          <div className="flex items-center justify-center gap-3 mt-4 flex-wrap">
+            {/* 语言切换 */}
+            <div className="flex bg-slate-100 rounded-xl p-1 text-xs">
+              <button
+                onClick={() => { setLang('cn'); setPlatform('sim-zhiwang-cn'); }}
+                className={`px-3 py-1.5 rounded-lg font-medium transition ${lang === 'cn' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >🇨🇳 中文</button>
+              <button
+                onClick={() => { setLang('en'); setPlatform('sim-turnitin-en'); }}
+                className={`px-3 py-1.5 rounded-lg font-medium transition ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >🇬🇧 English</button>
+            </div>
+
+            {/* 平台选择 */}
+            <select
+              value={platform}
+              onChange={e => setPlatform(e.target.value as any)}
+              className="text-sm border border-slate-200 rounded-xl px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+            >
+              {platformOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 平台说明 */}
+          {result && currentPlatform && (
+            <div className={`inline-flex items-center gap-1.5 mt-2 text-xs ${currentPlatform.color}`}>
+              <span>📐 当前结果已调整为「{currentPlatform.label}」风格</span>
+              <span className="text-slate-400">({currentPlatform.delta > 0 ? '+' : ''}{currentPlatform.delta}% 严格度)</span>
+            </div>
+          )}
         </div>
 
         {/* 输入区 */}
@@ -399,14 +460,14 @@ export default function DetectPage() {
             <div className={`${config.bg} border ${config.border} rounded-2xl p-6 text-center`}>
               <div className="text-6xl mb-3">{config.icon}</div>
               <div className={`text-4xl font-bold ${config.color} mb-2`}>
-                {result.ai}%
+                {displayAi}%
                 <span className="text-lg font-normal text-slate-500 ml-1">AI率</span>
               </div>
               <div className="text-sm text-slate-500 mb-3">
-                人类写作概率:{result.original}%
+                人类写作概率:{displayOrig}%
               </div>
               <div className="w-full h-3 bg-white rounded-full overflow-hidden mb-2">
-                <div className={`h-full ${config.bar} rounded-full transition-all duration-1000`} style={{ width: `${result.ai}%` }} />
+                <div className={`h-full ${config.bar} rounded-full transition-all duration-1000`} style={{ width: `${displayAi}%` }} />
               </div>
               <div className="text-xs text-slate-400">← 人类写作  AI生成 →</div>
               <div className={`mt-3 text-sm font-medium ${config.color}`}>{config.label}</div>
@@ -489,7 +550,7 @@ export default function DetectPage() {
             </div>
 
             {/* 降AI建议 */}
-            {result.ai >= 30 && (
+            {displayAi! >= 30 && (
               <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
                 <h3 className="text-sm font-bold text-indigo-700 mb-2 flex items-center gap-2">
                   💡 降低AI率的建议
