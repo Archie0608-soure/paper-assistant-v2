@@ -33,13 +33,25 @@ function getUserIdFromSession(req: NextRequest): string | null {
   } catch { return null; }
 }
 
+// 解码 Word XML 中的 HTML 实体（如 &quot; &amp; &lt; &gt;）
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
 // 翻译一段文本
 async function translateText(text: string, from: string, to: string): Promise<string> {
   if (!text.trim()) return text;
+  const clean = text.replace(/\x00PARA\x00/g, '\n').trim();
+  if (!clean) return clean;
   const salt = Date.now().toString() + Math.random().toString(36).slice(2, 8);
-  const sign = buildSignature(APP_ID, text, salt, SECRET_KEY);
+  const sign = buildSignature(APP_ID, clean, salt, SECRET_KEY);
   const params = new URLSearchParams({
-    q: text, from: LANG_MAP[from] || from, to: LANG_MAP[to] || to,
+    q: clean, from: LANG_MAP[from] || from, to: LANG_MAP[to] || to,
     appid: APP_ID, salt, sign,
   });
   const res = await fetch('https://api.fanyi.baidu.com/api/trans/vip/translate', {
@@ -52,10 +64,24 @@ async function translateText(text: string, from: string, to: string): Promise<st
   return (data.trans_result || []).map((t: any) => t.dst).join('');
 }
 
+// 按换行分段翻译，保持段落结构
+async function translateByLine(text: string, from: string, to: string): Promise<string> {
+  const lines = text.split('\n');
+  const transLines = await Promise.all(
+    lines.map(l => {
+      if (!l.trim()) return Promise.resolve(l);
+      return translateText(l, from, to);
+    })
+  );
+  return transLines.join('\n');
+}
+
 // 把多个 <w:t> 合并翻译，分段保持结构
-// strategy: 逐个 <w:t> 翻译（保证 XML 位置精确），但为减少 API 调用，
-// 把连续短文本合并成一个 chunk（总长 <= 1500）
-async function translateDocxText(runs: { xmlTag: string; text: string }[], from: string, to: string): Promise<string[]> {
+async function translateDocxText(
+  runs: { xmlTag: string; text: string }[],
+  from: string,
+  to: string
+): Promise<string[]> {
   const results: string[] = [];
   let i = 0;
   while (i < runs.length) {
@@ -77,7 +103,7 @@ async function translateDocxText(runs: { xmlTag: string; text: string }[], from:
       chunkRuns.push(next);
     }
     // 翻译这个 chunk
-    const translated = await translateText(chunkText, from, to);
+    const translated = await translateByLine(chunkText, from, to);
     const parts = translated.split('\n');
     for (let j = 0; j < chunkRuns.length; j++) {
       results.push(parts[j] ?? chunkRuns[j].text);
@@ -87,17 +113,19 @@ async function translateDocxText(runs: { xmlTag: string; text: string }[], from:
   return results;
 }
 
-// 把译文替换回 XML（逐个 <w:t> 标签从后往前替换，避开的索引偏移）
-function replaceTextsInXml(xml: string, runs: { xmlTag: string; text: string; fullMatch: string }[], translatedTexts: string[]): string {
+// 把译文替换回 XML（逐个 <w:t> 标签从后往前替换，避免索引偏移）
+function replaceTextsInXml(
+  xml: string,
+  runs: { xmlTag: string; text: string; fullMatch: string }[],
+  translatedTexts: string[]
+): string {
   let result = xml;
-  // 从后往前替换
   for (let i = runs.length - 1; i >= 0; i--) {
     const { fullMatch, text } = runs[i];
     const translated = (translatedTexts[i] ?? text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-    // 只替换 <w:t>...</w:t> 标签内的文字内容，不动标签本身
     const newTag = fullMatch.replace(/>[^<]*</, '>' + translated + '<');
     const pos = result.lastIndexOf(fullMatch);
     if (pos !== -1) {
@@ -114,23 +142,23 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    const from = (formData.get('from') as string) || 'en';
-    const to = (formData.get('to') as string) || 'zh';
+    const from = (formData.get('from') as string) || 'zh';
+    const to = (formData.get('to') as string) || 'en';
 
     if (!file) return NextResponse.json({ error: '请上传文件' }, { status: 400 });
 
-    // 读取 docx
     const buffer = Buffer.from(await file.arrayBuffer());
     const zip = await JSZip.loadAsync(buffer);
     const docXml = await zip.file('word/document.xml')?.async('string');
     if (!docXml) return NextResponse.json({ error: '无效的 docx 文件' }, { status: 400 });
 
-    // 提取所有 <w:t> 标签及其文字内容
+    // 提取所有 <w:t> 标签，并解码 XML 实体
     const wtRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
     const runs: { xmlTag: string; text: string; fullMatch: string }[] = [];
     let match;
     while ((match = wtRegex.exec(docXml)) !== null) {
-      runs.push({ xmlTag: match[0], text: match[1], fullMatch: match[0] });
+      const decodedText = decodeHtmlEntities(match[1]);
+      runs.push({ xmlTag: match[0], text: decodedText, fullMatch: match[0] });
     }
 
     const totalChars = runs.reduce((sum, r) => sum + r.text.length, 0);
@@ -148,6 +176,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `金币不足，需要${estimatedCoins}金币，当前${balance}金币` }, { status: 402 });
     }
 
+    // 扣金币（乐观锁）
     const deductResult = await supabase.from('users').update({ balance: balance - estimatedCoins }).eq('id', uid).eq('balance', balance);
     if (deductResult.count !== 1) {
       const { data: fresh } = await supabase.from('users').select('balance').eq('id', uid).maybeSingle();
@@ -159,13 +188,9 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // 翻译所有 <w:t> 文字
       const translatedTexts = await translateDocxText(runs, from, to);
-
-      // 替换回 XML
       const newDocXml = replaceTextsInXml(docXml, runs, translatedTexts);
 
-      // 重新打包 zip（只改 document.xml，其他文件原样保留）
       const newZip = new JSZip();
       const promises = Object.entries(zip.files).map(async ([name, zf]) => {
         if (name === 'word/document.xml') {
@@ -191,7 +216,7 @@ export async function POST(req: NextRequest) {
       });
 
     } catch (err: any) {
-      await supabase.from('users').update({ balance: balance }).eq('id', uid).eq('balance', balance - estimatedCoins);
+      await supabase.from('users').update({ balance: balance }).eq('id', uid);
       throw err;
     }
 

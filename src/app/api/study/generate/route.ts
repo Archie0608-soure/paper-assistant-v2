@@ -21,7 +21,7 @@ async function callSiliconFlow(prompt: string, temperature = 0.7): Promise<strin
       model: 'deepseek-ai/DeepSeek-V3.2',
       messages: [{ role: 'user', content: prompt }],
       temperature,
-      max_tokens: 4096,
+      max_tokens: 16384,
     });
     const options: https.RequestOptions = {
       hostname: 'api.siliconflow.cn',
@@ -60,23 +60,24 @@ async function generateStudyMaterials(courseName: string, text: string): Promise
   const wordCount = countWords(text);
   const truncated = text.slice(0, 6000);
 
-  const prompt = `你是一位大学课程助教，擅长从课程资料中提取关键信息并生成高质量复习资料。
+  const prompt = `你是一位大学课程助教，擅长从课程资料中提取关键信息并生成高质量、全面详尽的复习资料。
 
-请根据以下课程资料，为课程「${courseName}」生成结构化的复习材料。
+请根据以下课程资料，为课程「${courseName}」生成结构化的复习材料。**请生成详尽、充分的复习资料，每个部分都要展开足够的细节，不要精简。**
 
 要求生成的复习资料包含以下部分：
-1. **课程概述** - 用3-5句话概括这门课的核心内容和学习目标
-2. **核心知识点列表** - 列出10-20个最重要知识点，每个知识点用一句话解释
-3. **名词解释** - 列出8-15个核心术语，给出简明定义（50字以内）
-4. **重点简答题** - 生成5-8道典型简答题，并给出参考答案
-5. **填空题** - 生成5-8道填空题，答案用括号标出
-6. **知识框架图** - 用Markdown格式画出本课程的知识结构（用ASCII/Unicode图表）
+1. **课程概述** - 用5-8句话详细概括这门课的核心内容、学习目标和主要章节安排
+2. **核心知识点列表** - 列出15-25个最重要知识点，每个知识点用2-3句话详细解释，必要时给出例子或公式
+3. **名词解释** - 列出10-20个核心术语，给出详细定义（100-200字），结合课程上下文说明
+4. **重点简答题** - 生成8-12道典型简答题，每道题给出详细完整的参考答案（150-300字），涵盖所有采分点
+5. **填空题** - 生成8-12道填空题，答案用括号标出，题目覆盖核心概念和关键数据
+6. **知识框架图** - 用Markdown格式画出本课程的知识结构（用ASCII/Unicode图表），包含主要章节和它们的关系
 
 格式要求：
 - 所有内容用中文回复
 - 使用Markdown格式输出
 - 重点术语用**加粗**
 - 简答题标注【简答题】、填空题标注【填空题】
+- 每个部分都要有充分的展开，内容充实，不要三两句话就结束
 
 课程资料内容：
 ${truncated}`;

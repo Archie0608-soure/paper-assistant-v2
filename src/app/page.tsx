@@ -172,6 +172,8 @@ export default function Home() {
   const [translateLoading, setTranslateLoading] = useState(false);
   const [translateError, setTranslateError] = useState('');
   const [translateFileName, setTranslateFileName] = useState('');
+  const [translateDocxFile, setTranslateDocxFile] = useState<File | null>(null);
+  const [translateLoadingFormat, setTranslateLoadingFormat] = useState(false);
   const translateFileRef = useRef<HTMLInputElement>(null);
 
   const LANGUAGES = [
@@ -1485,6 +1487,7 @@ export default function Home() {
         const arrayBuffer = await file.arrayBuffer();
         const { value } = await mammoth.extractRawText({ arrayBuffer });
         text = value;
+        setTranslateDocxFile(file);
       } else if (file.name.endsWith('.txt')) {
         text = await file.text();
       } else {
@@ -1503,6 +1506,33 @@ export default function Home() {
     setTranslateTo(translateFrom);
     setTranslateInput(translateResult);
     setTranslateResult(translateInput);
+  };
+
+  // 翻译：保持格式翻译（仅 docx）
+  const handleTranslateWithFormat = async () => {
+    if (!translateDocxFile) return;
+    setTranslateLoadingFormat(true);
+    setTranslateError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', translateDocxFile);
+      fd.append('from', translateFrom);
+      fd.append('to', translateTo);
+      const res = await fetch('/api/ai/translate-docx', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const data = await res.json();
+        setTranslateError(data.error || '翻译失败');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = translateFileName.replace(/\.docx$/, '') + '_翻译.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { setTranslateError('网络错误，请重试');
+    } finally { setTranslateLoadingFormat(false); }
   };
 
   // 翻译：执行翻译
@@ -1710,6 +1740,11 @@ export default function Home() {
                           <Brain className="w-4 h-4 text-slate-400" />
                           复习资料生成
                         </button>
+                        <button onClick={() => { setShowUserMenu(false); window.location.href='/detect'; }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                          <Sparkles className="w-4 h-4 text-slate-400" />
+                          AI率检测
+                        </button>
                         <button onClick={() => router.push('/feedback')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
                           <MessageSquare className="w-4 h-4 text-slate-400" />
                           问题反馈
@@ -1800,6 +1835,13 @@ export default function Home() {
           <Bot className="w-5 h-5" />
           <span className={`${activeFeature === 'agent' ? 'font-bold' : 'font-medium'}`}>智能体</span>
         </button>
+        <button
+          onClick={() => window.location.href = '/detect'}
+          className="flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-indigo-500 scale-100"
+        >
+          <Sparkles className="w-5 h-5" />
+          <span className="font-medium">AI率</span>
+        </button>
       </div>
 
       <div className="max-w-6xl mx-auto flex gap-6 py-6 px-6">
@@ -1854,6 +1896,13 @@ export default function Home() {
             >
               <Bot className="w-5 h-5" />
               <span className="font-medium">科研智能体</span>
+            </button>
+            <button
+              onClick={() => window.location.href = '/detect'}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all duration-300"
+            >
+              <Sparkles className="w-5 h-5" />
+              <span className="font-medium">AI率检测</span>
             </button>
           </div>
         </aside>
@@ -2941,7 +2990,7 @@ export default function Home() {
                 <button onClick={swapTranslateLang}
                   className="p-2 rounded-full hover:bg-slate-100 transition text-slate-500 hover:text-indigo-600"
                   title="交换语言">
-                  <ArrowRight className="w-4 h-4 rotate-180" />
+                  <ArrowRight className="w-4 h-4" />
                 </button>
                 <select value={translateTo} onChange={e => setTranslateTo(e.target.value)}
                   className="px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -2977,12 +3026,19 @@ export default function Home() {
               </div>
 
               {/* 翻译按钮 */}
-              <div className="flex justify-center mb-4">
+              <div className="flex flex-col items-center gap-2 mb-4">
                 <button onClick={handleTranslate} disabled={translateLoading}
                   className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
                   {translateLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
                   {translateLoading ? '翻译中...' : '开始翻译'}
                 </button>
+                {translateDocxFile && (
+                  <button onClick={handleTranslateWithFormat} disabled={translateLoadingFormat}
+                    className="flex items-center gap-2 px-4 py-1.5 text-xs text-indigo-600 border border-indigo-300 rounded-lg hover:bg-indigo-50 disabled:opacity-50">
+                    {translateLoadingFormat ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                    {translateLoadingFormat ? '翻译中（保持格式）...' : '📄 保持格式翻译'}
+                  </button>
+                )}
               </div>
 
               {/* 错误提示 */}
