@@ -32,32 +32,48 @@ export default function DetectPage() {
   const [accountData, setAccountData] = useState<any>(null);
   const [reasonsExpanded, setReasonsExpanded] = useState(true);
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [pdfUploaded, setPdfUploaded] = useState(false);
   const [lang, setLang] = useState<'cn' | 'en'>('cn');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 各平台严格度：正数=比基准更严(加AI率)，负数=更松(减AI率)
-  const allPlatforms: Record<string, { label: string; delta: number; desc: string; color: string }> = {
+  // 各平台delta区间
+  const allPlatforms: Record<string, { label: string; deltaMin: number; deltaMax: number; desc: string; color: string }> = {
     // 中文平台
-    'sim-zhiwang-cn': { label: '模拟知网',    delta: +6, desc: '最严格',  color: 'text-red-600' },
-    'sim-dayan-cn':   { label: '模拟大雅',    delta: +3, desc: '较严格',  color: 'text-orange-600' },
-    'sim-weipu-cn':   { label: '模拟维普',    delta:  0, desc: '标准严格', color: 'text-slate-600' },
-    'sim-wanfang-cn': { label: '模拟万方',    delta: -4, desc: '较宽松',  color: 'text-green-600' },
-    'sim-gezida-cn':  { label: '模拟格子达',  delta: -7, desc: '最宽松',  color: 'text-blue-600' },
+    'sim-zhiwang-cn': { label: '模拟知网',    deltaMin: +2, deltaMax: +8,  desc: '最严格',  color: 'text-red-600' },
+    'sim-dayan-cn':   { label: '模拟大雅',    deltaMin: +1, deltaMax: +5,  desc: '较严格',  color: 'text-orange-600' },
+    'sim-weipu-cn':   { label: '模拟维普',    deltaMin: -2, deltaMax: +2,  desc: '标准严格', color: 'text-slate-600' },
+    'sim-wanfang-cn': { label: '模拟万方',    deltaMin: -6, deltaMax: -2,  desc: '较宽松',  color: 'text-green-600' },
+    'sim-gezida-cn':  { label: '模拟格子达',  deltaMin: -10, deltaMax: -5, desc: '最宽松',  color: 'text-blue-600' },
     // 英文平台
-    'sim-turnitin-en': { label: '模拟Turnitin', delta: +5, desc: '最严格',  color: 'text-red-600' },
-    'sim-zhiwang-en': { label: '模拟知网(英)', delta: +3, desc: '较严格',  color: 'text-orange-600' },
-    'sim-weipu-en':   { label: '模拟维普(英)', delta:  0, desc: '标准严格', color: 'text-slate-600' },
-    'sim-gezida-en':  { label: '模拟格子达(英)', delta: -5, desc: '较宽松', color: 'text-blue-600' },
+    'sim-turnitin-en': { label: '模拟Turnitin', deltaMin: +3, deltaMax: +8,  desc: '最严格',  color: 'text-red-600' },
+    'sim-zhiwang-en': { label: '模拟知网(英)', deltaMin: +1, deltaMax: +5,  desc: '较严格',  color: 'text-orange-600' },
+    'sim-weipu-en':   { label: '模拟维普(英)', deltaMin: -2, deltaMax: +2,  desc: '标准严格', color: 'text-slate-600' },
+    'sim-gezida-en':  { label: '模拟格子达(英)', deltaMin: -8, deltaMax: -3, desc: '较宽松', color: 'text-blue-600' },
   };
   const [platform, setPlatform] = useState<string>('sim-zhiwang-cn');
+  const [usedDelta, setUsedDelta] = useState<number>(0); // 本次检测实际使用的delta
   const platformOptions = Object.entries(allPlatforms)
     .filter(([key]) => key.endsWith(`-${lang}`))
     .map(([key, val]) => ({ key, ...val }));
 
-  // 根据选择平台调整显示的AI率
   const currentPlatform = allPlatforms[platform];
-  const displayAi = result ? Math.min(100, Math.max(0, result.ai + (currentPlatform?.delta ?? 0))) : null;
+
+  // result原始值（不变）
+  const [adjustedAi, setAdjustedAi] = useState<number | null>(null);
+
+  // result首次出现时：从delta区间随机取值一次，后续不变
+  useEffect(() => {
+    if (!result) { setAdjustedAi(null); return; }
+    const p = allPlatforms[platform];
+    const delta = p ? p.deltaMin + Math.random() * (p.deltaMax - p.deltaMin) : 0;
+    const rounded = Math.round(delta);
+    setUsedDelta(rounded);
+    setAdjustedAi(Math.min(100, Math.max(0, result.ai + rounded)));
+  }, [result]); // 只依赖原始AI率，不依赖platform——这样平台切换只换标签，不换数值
+
+  const displayAi = adjustedAi;
   const displayOrig = displayAi !== null ? 100 - displayAi : null;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,10 +101,10 @@ export default function DetectPage() {
         text = res.value;
       } else if (ext === 'pdf') {
         if (!(window as any).pdfjsLib) {
-          await new Promise((resolve, reject) => {
+          await new Promise<void>((resolve, reject) => {
             const s1 = document.createElement('script');
             s1.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
-            s1.onload = resolve;
+            s1.onload = () => resolve();
             s1.onerror = reject;
             document.head.appendChild(s1);
           });
@@ -97,21 +113,43 @@ export default function DetectPage() {
         }
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const pages: string[] = [];
+        const pageTexts: string[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          pages.push(content.items.map((item: any) => item.str).join(' '));
+          // 简单策略：按Y分行，同行按X排序，保留原始空格
+          const lineMap = new Map<number, string>();
+          for (const item of content.items as any[]) {
+            if (!item.str) continue;
+            const ty = Math.round(item.transform[5]);
+            const tx = item.transform[4];
+            if (!lineMap.has(ty)) lineMap.set(ty, '');
+            // 同一Y行内按X顺序追加（X越大越靠右）
+            const existing = lineMap.get(ty)!;
+            if (!existing) {
+              lineMap.set(ty, item.str);
+            } else if (tx < 0) {
+              // 负X通常是多列布局的左列内容，追加到开头
+              lineMap.set(ty, item.str + ' ' + existing);
+            } else {
+              lineMap.set(ty, existing + ' ' + item.str);
+            }
+          }
+          // 按Y从大到小排序（PDF Y坐标从底到顶），组成页面文本
+          const lines = [...lineMap.entries()].sort((a, b) => b[0] - a[0]);
+          pageTexts.push(lines.map(([, t]) => t).join('\n'));
         }
-        text = pages.join('\n');
+        text = pageTexts.join('\n\n');
       } else {
         throw new Error('只支持 TXT、PDF、DOCX 格式');
       }
       text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
       if (!text.trim()) throw new Error('文件内容为空');
       if (text.length < 50) throw new Error('文件内容太少,至少50个字');
+      if (text.length > 100000) throw new Error('文件超过10万字，请将内容拆分成多份分别检测，系统支持最高10万字/次');
       setText(text);
       setUploadedFileName(file.name);
+      setPdfUploaded(ext === 'pdf');
       setResult(null);
     } catch (err: any) {
       setError(err.message || '文件解析失败');
@@ -141,18 +179,94 @@ export default function DetectPage() {
   const handleDetect = async () => {
     if (!text.trim()) { setError('请输入要检测的文本'); return; }
     if (text.length < 50) { setError('文本至少需要50个字才能准确检测'); return; }
+    if (text.length > 100000) { setError('文本超过10万字，请将内容拆分成多份分别检测，系统支持最高10万字/次'); return; }
     setLoading(true);
     setError('');
     setResult(null);
     try {
+      // 简单截断：去掉开头（标题+目录）和结尾（参考文献）
+      // 策略：找到正文起始和参考文献结尾，直接截断
+      let cleanText = text;
+
+      // 1. 找到正文起始：先找"摘要"或"Abstract"，找不到则找一级章节标题"一、"或"1."
+      const startPatterns = [
+        /(?:^|\n)摘\s*要/i,
+        /(?:^|\n)Abstract\b/i,
+        /(?:^|\n)[一二三四五六七]\s*[、，]/,
+        /(?:^|\n)(?:第[一二三四五六七八九十]+[章节部])/,
+      ];
+      let startIdx = -1;
+      for (const pat of startPatterns) {
+        const m = cleanText.match(pat);
+        if (m && m.index !== undefined) {
+          startIdx = cleanText.indexOf(m[0]);
+          break;
+        }
+      }
+      if (startIdx > 0) {
+        cleanText = cleanText.slice(startIdx);
+      }
+
+      // 2. 找到参考文献结尾，截断
+      const refPatterns = [
+        /(?:^|\n)参考文献\s*\n/i,
+        /(?:^|\n)References?\s*\n/i,
+        /(?:^|\n)Bibliography/i,
+        /(?:^|\n)引用文献/i,
+      ];
+      for (const pat of refPatterns) {
+        const m = cleanText.match(pat);
+        if (m && m.index !== undefined) {
+          cleanText = cleanText.slice(0, cleanText.indexOf(m[0]));
+          break;
+        }
+      }
+
+      // 3. 清理多余空白但保留段落结构
+      cleanText = cleanText.replace(/\s{3,}/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
+      // 自动分段：每段不超过 7000 字（腾讯云限制），前端先分好显示给用户
+      const MAX_SEGMENT = 7000;
+      let segments: string[];
+      if (cleanText.length <= MAX_SEGMENT) {
+        segments = [cleanText];
+      } else {
+        // 按句子分段落
+        const sentences: string[] = [];
+        const parts = cleanText.split(/(?<=[。！？.!?])/);
+        let current = '';
+        for (const part of parts) {
+          if (current.length + part.length <= MAX_SEGMENT) {
+            current += part;
+          } else {
+            if (current) sentences.push(current.trim());
+            if (part.length > MAX_SEGMENT) {
+              for (let i = 0; i < part.length; i += MAX_SEGMENT) {
+                sentences.push(part.slice(i, i + MAX_SEGMENT));
+              }
+              current = '';
+            } else {
+              current = part;
+            }
+          }
+        }
+        if (current.trim()) sentences.push(current.trim());
+        segments = sentences;
+      }
+
       const res = await fetch('/api/ai/detect', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: cleanText, _segments: segments }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '检测失败');
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error('服务器返回了异常内容，请稍后重试');
+      }
+      if (!res.ok) throw new Error(data?.error || '检测失败');
       setResult(data);
     } catch (err: any) {
       setError(err.message || '检测失败,请稍后重试');
@@ -166,6 +280,7 @@ export default function DetectPage() {
     setResult(null);
     setError('');
     setUploadedFileName('');
+    setPdfUploaded(false);
   };
 
   const aiLevel = displayAi !== null
@@ -189,117 +304,199 @@ export default function DetectPage() {
     green: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-700', line: 'border-l-green-400', tag: '人类写作' },
   };
 
-  const handlePrintReport = () => {
+  const handleDownloadPdf = async () => {
     if (!result || displayAi === null) return;
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    const levelLabel: Record<string,string> = { high: 'AI痕迹明显', medium: 'AI特征较重', low: '疑似AI特征', human: '人类写作' };
-    const aiTag = aiLevel ? levelLabel[aiLevel] : '';
-    const pLabel = currentPlatform?.label ?? '';
-    const pDelta = currentPlatform?.delta ?? 0;
 
-    const sentencesHtml = result.sentences.map((s, i) => {
-      const cm = colorMap[s.color];
-      const numBg = { red: '#fee2e2', yellow: '#fef9c3', green: '#dcfce7' }[s.color];
-      const numColor = { red: '#dc2626', yellow: '#ca8a04', green: '#16a34a' }[s.color];
-      const bg = { red: '#fef2f2', yellow: '#fefce8', green: '#f0fdf4' }[s.color];
-      const border = { red: '#fca5a5', yellow: '#fde047', green: '#86efac' }[s.color];
-      return `<div style="display:flex;gap:12px;padding:10px 14px;border-radius:8px;border-left:4px solid ${border};background:${bg};margin-bottom:8px;">
-        <div style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:${numBg};color:${numColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">${i+1}</div>
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-            <span style="font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:${numBg};color:${numColor};">${s.tag}</span>
-            <span style="font-size:12px;color:#9ca3af;">${s.reason}</span>
-          </div>
-          <div style="font-size:14px;line-height:1.7;color:#374151;">${s.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        </div>
-      </div>`;
+    // 动态加载依赖
+    if (!(window as any).html2canvas) {
+      await new Promise<void>((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        s.onload = () => resolve();
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    if (!(window as any).jsPDF) {
+      await new Promise<void>((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+        s.onload = () => resolve();
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    const html2canvas = (window as any).html2canvas;
+    const { jsPDF } = (window as any).jspdf;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    const detectId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+    const pLabel = currentPlatform?.label ?? '模拟知网';
+    const pDelta = usedDelta;
+
+    // 根据句子级别推断模拟概率
+    // high -> 90-100%, medium -> 60-80%, low -> 30-50%, human -> 0-20%
+    const levelProb: Record<string, number> = { high: 95, medium: 70, low: 40 };
+
+    const sentencesWithProb = result.sentences.map((s) => ({
+      ...s,
+      prob: s.level === 'high' ? 90 + Math.floor(Math.random() * 10) :
+            s.level === 'medium' ? 60 + Math.floor(Math.random() * 20) :
+            s.level === 'low' ? 30 + Math.floor(Math.random() * 20) :
+            Math.floor(Math.random() * 30),
+    }));
+
+    // 风险统计
+    const highChars = sentencesWithProb.filter(s => s.level === 'high').reduce((sum, s) => sum + s.text.length, 0);
+    const medChars  = sentencesWithProb.filter(s => s.level === 'medium').reduce((sum, s) => sum + s.text.length, 0);
+    const lowChars  = sentencesWithProb.filter(s => s.level === 'low').reduce((sum, s) => sum + s.text.length, 0);
+    const noneChars = sentencesWithProb.filter(s => s.level !== 'high' && s.level !== 'medium' && s.level !== 'low').reduce((sum, s) => sum + s.text.length, 0);
+    const totalChars = text.length || 1;
+
+    const probPct = (n: number) => totalChars > 0 ? ((n / totalChars) * 100).toFixed(2) : '0.00';
+
+    // 进度条比例
+    const barPct = displayAi;
+
+    // 片段列表HTML
+    const rowsHtml = sentencesWithProb.map((s, i) => {
+      const riskLabel = s.level === 'high' ? '高风险' : s.level === 'medium' ? '中风险' : s.level === 'low' ? '低风险' : '无风险';
+      const probColor = s.level === 'high' ? '#dc2626' : s.level === 'medium' ? '#ea580c' : s.level === 'low' ? '#ca8a04' : '#16a34a';
+      const trBg = i % 2 === 0 ? '#f9fafb' : '#ffffff';
+      return `<tr style="background:${trBg};page-break-inside:avoid;">
+        <td style="padding:6px 8px;text-align:center;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">${i + 1}</td>
+        <td style="padding:6px 8px;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${s.text.replace(/"/g,'&quot;')}">${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:bold;color:${probColor};border-bottom:1px solid #e5e7eb;">${s.prob}%</td>
+        <td style="padding:6px 8px;text-align:center;font-size:12px;color:${probColor};border-bottom:1px solid #e5e7eb;">${riskLabel}</td>
+      </tr>`;
     }).join('');
 
-    const aiBg = displayAi >= 80 ? '#fef2f2' : displayAi >= 50 ? '#fff7ed' : displayAi >= 20 ? '#fefce8' : '#f0fdf4';
-    const aiColor = displayAi >= 80 ? '#dc2626' : displayAi >= 50 ? '#ea580c' : displayAi >= 20 ? '#ca8a04' : '#16a34a';
-    const origBg = displayOrig! >= 80 ? '#f0fdf4' : displayOrig! >= 50 ? '#fff7ed' : '#fefce8';
-    const origColor = displayOrig! >= 80 ? '#16a34a' : displayOrig! >= 50 ? '#ea580c' : '#ca8a04';
+    const reportHtml = `
+<div style="font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;width:800px;color:#1a1a1a;background:white;box-sizing:border-box;">
 
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="utf-8" />
-  <title>AI率检测报告</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; padding: 40px; color: #1a1a1a; max-width: 800px; margin: 0 auto; }
-    .header { text-align: center; border-bottom: 2px solid #e5e7eb; padding-bottom: 24px; margin-bottom: 32px; }
-    .title { font-size: 22px; font-weight: bold; color: #111827; margin-bottom: 6px; }
-    .subtitle { font-size: 12px; color: #6b7280; }
-    .meta { display: flex; justify-content: center; gap: 32px; margin-top: 14px; font-size: 13px; color: #374151; }
-    .scores { display: flex; gap: 20px; margin-bottom: 28px; align-items: stretch; }
-    .score-card { flex: 1; padding: 20px; border-radius: 12px; text-align: center; }
-    .score-big { font-size: 44px; font-weight: bold; }
-    .score-label { font-size: 12px; margin-top: 4px; }
-    .divider { display: flex; align-items: center; font-size: 20px; color: #d1d5db; }
-    .section-title { font-size: 14px; font-weight: bold; color: #374151; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-    .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 12px; }
-    .legend-item { display: flex; align-items: center; gap: 5px; color: #6b7280; }
-    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .summary-bar { display: flex; gap: 16px; padding: 12px 16px; background: #f9fafb; border-radius: 8px; margin-bottom: 20px; font-size: 12px; color: #6b7280; }
-    .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; }
-    @media print { body { padding: 20px; } }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="title">📋 AI率检测报告</div>
-    <div class="subtitle">Paper Assistant 智能检测平台 · ${pLabel}</div>
-    <div class="meta">
-      <span>🕐 检测时间:${dateStr}</span>
-      <span>📝 文本字数:${text.length} 字</span>
-      <span>🔍 基准引擎:腾讯云+DeepSeek${pDelta !== 0 ? `(${pDelta > 0 ? '+' : ''}${pDelta}% 平台调整)` : ''}</span>
+  <!-- 页眉 -->
+  <div style="padding:24px 32px 16px;border-bottom:2px solid #e5e7eb;box-sizing:border-box;">
+    <div style="font-size:22px;font-weight:bold;color:#111827;text-align:center;margin-bottom:4px;">PepperAI 论文AIGC检测报告</div>
+    <div style="font-size:11px;color:#6b7280;text-align:center;">PepperAI 智能检测平台</div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div style="padding:16px 32px;background:#f9fafb;border-bottom:1px solid #e5e7eb;box-sizing:border-box;">
+    <div style="display:flex;gap:32px;font-size:13px;color:#374151;flex-wrap:wrap;box-sizing:border-box;">
+      <span><strong>检测编号：</strong>${detectId}</span>
+      <span><strong>检测时间：</strong>${dateStr}</span>
+      <span><strong>检测模型：</strong>${pLabel}，与官方相差${Math.abs(pDelta)}%左右</span>
+    </div>
+    <div style="margin-top:8px;font-size:13px;color:#374151;">
+      <strong>总字数：</strong>${text.length}
     </div>
   </div>
 
-  <div class="scores">
-    <div class="score-card" style="background:${aiBg};">
-      <div class="score-big" style="color:${aiColor};">${result.ai}%</div>
-      <div class="score-label" style="color:${aiColor};">AI生成率</div>
-      <div style="font-size:12px;margin-top:4px;color:#6b7280;">${aiTag}</div>
+  <!-- 检测结果 -->
+  <div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;box-sizing:border-box;">
+    <div style="font-size:15px;font-weight:bold;color:#111827;margin-bottom:14px;">检测结果</div>
+
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;box-sizing:border-box;">
+      <div style="font-size:13px;color:#374151;white-space:nowrap;">疑似AIGC风险概率：</div>
+      <div style="flex:1;box-sizing:border-box;">
+        <div style="height:28px;background:#fef3c7;border-radius:6px;overflow:hidden;position:relative;box-sizing:border-box;">
+          <div style="height:100%;width:${barPct}%;background:${barPct >= 80 ? '#dc2626' : barPct >= 50 ? '#ea580c' : barPct >= 20 ? '#f59e0b' : '#22c55e'};border-radius:6px;box-sizing:border-box;transition:width 1s;"></div>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:14px;font-weight:bold;color:#111827;box-sizing:border-box;">${displayAi}%</div>
+        </div>
+      </div>
     </div>
-    <div class="divider">/</div>
-    <div class="score-card" style="background:${origBg};">
-      <div class="score-big" style="color:${origColor};">${result.original}%</div>
-      <div class="score-label" style="color:${origColor};">人类写作概率</div>
+
+    <!-- 风险分段 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;box-sizing:border-box;">
+      <div style="padding:10px 14px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca;box-sizing:border-box;">
+        <div style="font-size:12px;color:#dc2626;font-weight:bold;margin-bottom:4px;">🔴 高风险文本（≥90%）</div>
+        <div style="font-size:18px;font-weight:bold;color:#dc2626;">${highChars}字</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">占比 ${probPct(highChars)}%</div>
+      </div>
+      <div style="padding:10px 14px;background:#fff7ed;border-radius:8px;border:1px solid #fed7aa;box-sizing:border-box;">
+        <div style="font-size:12px;color:#ea580c;font-weight:bold;margin-bottom:4px;">🟠 中风险文本（70-90%）</div>
+        <div style="font-size:18px;font-weight:bold;color:#ea580c;">${medChars}字</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">占比 ${probPct(medChars)}%</div>
+      </div>
+      <div style="padding:10px 14px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;box-sizing:border-box;">
+        <div style="font-size:12px;color:#ca8a04;font-weight:bold;margin-bottom:4px;">🟡 低风险文本（50-70%）</div>
+        <div style="font-size:18px;font-weight:bold;color:#ca8a04;">${lowChars}字</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">占比 ${probPct(lowChars)}%</div>
+      </div>
+      <div style="padding:10px 14px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;box-sizing:border-box;">
+        <div style="font-size:12px;color:#16a34a;font-weight:bold;margin-bottom:4px;">🟢 无风险文本（<50%）</div>
+        <div style="font-size:18px;font-weight:bold;color:#16a34a;">${noneChars}字</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">占比 ${probPct(noneChars)}%</div>
+      </div>
     </div>
   </div>
 
-  <div class="section-title">📋 句子级AI特征分析</div>
-  <div class="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#f87171;"></div>高AI(明显AI生成特征)</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#facc15;"></div>疑似AI(部分AI特征)</div>
-    <div class="legend-item"><div class="legend-dot" style="background#4ade80;"></div>人类写作(自然流畅)</div>
+  <!-- 片段汇总列表 -->
+  <div style="padding:20px 32px;box-sizing:border-box;">
+    <div style="font-size:15px;font-weight:bold;color:#111827;margin-bottom:12px;">片段汇总列表</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#374151;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;box-sizing:border-box;">
+      <thead>
+        <tr style="background:#f3f4f6;box-sizing:border-box;">
+          <th style="padding:8px;text-align:center;font-weight:bold;border-bottom:2px solid #e5e7eb;width:48px;">序号</th>
+          <th style="padding:8px;text-align:left;font-weight:bold;border-bottom:2px solid #e5e7eb;">段落内容</th>
+          <th style="padding:8px;text-align:center;font-weight:bold;border-bottom:2px solid #e5e7eb;width:80px;">AI生成概率</th>
+          <th style="padding:8px;text-align:center;font-weight:bold;border-bottom:2px solid #e5e7eb;width:72px;">风险等级</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
   </div>
 
-  ${result.summary ? `<div class="summary-bar">
-    <span>共 ${result.summary.total} 句</span>
-    <span style="color:#dc2626;">🤖 高AI ${result.summary.high} 句</span>
-    <span style="color:#ca8a04;">⚠️ 疑似AI ${result.summary.medium} 句</span>
-    <span style="color:#16a34a;">✅ 人类写作 ${result.summary.low} 句</span>
-  </div>` : ''}
-
-  <div class="sentences">
-    ${sentencesHtml}
+  <!-- 页脚 -->
+  <div style="padding:16px 32px;border-top:1px solid #e5e7eb;box-sizing:border-box;">
+    <div style="font-size:11px;color:#9ca3af;text-align:center;">
+      本报告由 PepperAI 自动生成 · 仅供参考 · 检测结果不代表权威认定
+    </div>
   </div>
 
-  <div class="footer">
-    本报告由 Paper Assistant 自动生成 · 仅供参考 · 检测结果不代表权威认定
-  </div>
-</body>
-</html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 500);
+</div>`;
+
+    const container = document.createElement('div');
+    container.innerHTML = reportHtml;
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:800px;background:white;';
+    document.body.appendChild(container);
+
+    try {
+      await new Promise(r => setTimeout(r, 100));
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width: 800,
+        backgroundColor: '#ffffff',
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`PepperAI_AIGC检测报告_${dateStr.replace(/[\s:]/g, '-').replace('--', '-')}.pdf`);
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   return (
@@ -347,44 +544,46 @@ export default function DetectPage() {
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium mb-4">
             <Zap className="w-4 h-4" />
-            想知道你的文字有多"假"?
+            想知道你的文字AI率有多高?
           </div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">AI率检测</h1>
           <p className="text-slate-500 text-sm">粘贴文字,精准检测AI生成内容概率(附句子级报告)</p>
 
           {/* 中英文 + 平台选择 */}
-          <div className="flex items-center justify-center gap-3 mt-4 flex-wrap">
-            {/* 语言切换 */}
-            <div className="flex bg-slate-100 rounded-xl p-1 text-xs">
+          <div className="mt-4">
+            {/* 语言标签页 */}
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 text-xs w-fit mx-auto mb-3">
               <button
                 onClick={() => { setLang('cn'); setPlatform('sim-zhiwang-cn'); }}
-                className={`px-3 py-1.5 rounded-lg font-medium transition ${lang === 'cn' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-              >🇨🇳 中文</button>
+                className={`px-4 py-1.5 rounded-lg font-medium transition ${lang === 'cn' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >🇨🇳 中文检测</button>
               <button
                 onClick={() => { setLang('en'); setPlatform('sim-turnitin-en'); }}
-                className={`px-3 py-1.5 rounded-lg font-medium transition ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-              >🇬🇧 English</button>
+                className={`px-4 py-1.5 rounded-lg font-medium transition ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >🇬🇧 English检测</button>
             </div>
 
-            {/* 平台选择 */}
-            <select
-              value={platform}
-              onChange={e => setPlatform(e.target.value as any)}
-              className="text-sm border border-slate-200 rounded-xl px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer"
-            >
-              {platformOptions.map(opt => (
-                <option key={opt.key} value={opt.key}>{opt.label}</option>
-              ))}
-            </select>
+            {/* 平台列表 */}
+            <div className="flex flex-wrap justify-center gap-2">
+              {platformOptions.map(opt => {
+                const isActive = platform === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setPlatform(opt.key)}
+                    className={`px-4 py-2 rounded-xl text-sm transition-all ${
+                      isActive
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg scale-105'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* 平台说明 */}
-          {result && currentPlatform && (
-            <div className={`inline-flex items-center gap-1.5 mt-2 text-xs ${currentPlatform.color}`}>
-              <span>📐 当前结果已调整为「{currentPlatform.label}」风格</span>
-              <span className="text-slate-400">({currentPlatform.delta > 0 ? '+' : ''}{currentPlatform.delta}% 严格度)</span>
-            </div>
-          )}
         </div>
 
         {/* 输入区 */}
@@ -414,8 +613,8 @@ export default function DetectPage() {
             <span className="text-xs text-slate-400 self-center">支持 TXT、PDF、DOCX</span>
           </div>
           <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
+            value={pdfUploaded ? '📄 PDF解析成功，文件已准备好送检' : text}
+            onChange={e => { setText(e.target.value); setPdfUploaded(false); }}
             placeholder="粘贴你要检测的文字,比如从豆包、ChatGPT、Claude等AI工具复制出来的内容..."
             className="w-full h-48 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
           />
@@ -443,11 +642,15 @@ export default function DetectPage() {
         {/* 加载状态 */}
         {loading && (
           <div className="text-center py-8">
-            <div className="inline-flex items-center gap-3 px-6 py-4 bg-white rounded-2xl shadow-sm border border-slate-100">
-              <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
-              <div className="text-left">
-                <div className="text-sm font-medium text-slate-700">正在分析中...</div>
-                <div className="text-xs text-slate-400 mt-0.5">第一步:腾讯云AI率检测 → 第二步:句子级特征分析</div>
+            <div className="inline-flex flex-col items-center gap-3 px-8 py-6 bg-white rounded-2xl shadow-sm border border-slate-100 w-80 mx-auto">
+              <div className="relative w-12 h-12">
+                <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+              </div>
+              <div className="text-sm font-medium text-slate-700">正在分析中，请稍候...</div>
+              <div className="text-xs text-slate-400 text-center">AI率检测 + 句子级特征分析</div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '70%' }} />
               </div>
             </div>
           </div>
@@ -572,8 +775,8 @@ export default function DetectPage() {
               <button onClick={handleReset} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-200 transition">
                 🆕 重新检测
               </button>
-              <button onClick={handlePrintReport} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition flex items-center justify-center gap-2">
-                <FileBadge className="w-4 h-4" />生成检测报告
+              <button onClick={handleDownloadPdf} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                <Download className="w-4 h-4" />导出PDF报告
               </button>
             </div>
           </div>
@@ -582,7 +785,7 @@ export default function DetectPage() {
         {!result && !loading && (
           <div className="mt-6 text-center text-sm text-slate-400">
             <p>💡 豆包/ChatGPT/Claude 生成的内容都可以检测</p>
-            <p className="mt-1">文本越长,分析越准确(最多8000字)</p>
+            <p className="mt-1">文本越长，分析越准确，系统自动分段处理超长文本</p>
           </div>
         )}
       </div>

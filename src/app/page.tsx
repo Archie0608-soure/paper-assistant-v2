@@ -1787,11 +1787,19 @@ export default function Home() {
       {/* 移动端：功能栏横向贴顶 */}
       <div className="md:hidden flex gap-2.5 overflow-x-auto pb-3 px-4 -mx-4 scrollbar-hide">
         <button
-          onClick={() => setActiveFeature('generate')}
-          className={`flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg scale-105' : 'bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-amber-500 scale-100'}`}
+          onClick={() => setActiveFeature('reduce')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out relative ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg scale-105' : 'bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-teal-500 scale-100'}`}
         >
-          <FileText className="w-5 h-5" />
-          <span className={`${activeFeature === 'generate' ? 'font-bold' : 'font-medium'}`}>文章</span>
+          <Scale className="w-5 h-5" />
+          <span className={`${activeFeature === 'reduce' ? 'font-bold' : 'font-medium'}`}>降重</span>
+        </button>
+        <button
+          onClick={() => window.location.href = '/detect'}
+          className="flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-indigo-500 scale-100 relative"
+        >
+          <Sparkles className="w-5 h-5" />
+          <span className="font-medium">AI率</span>
+          <span className="absolute -top-1 -right-1 text-[9px] bg-green-100 text-green-600 font-bold px-1 py-0.5 rounded-full">免费</span>
         </button>
         <button
           onClick={() => setActiveFeature('translate')}
@@ -1808,11 +1816,11 @@ export default function Home() {
           <span className={`${activeFeature === 'ppt' ? 'font-bold' : 'font-medium'}`}>PPT</span>
         </button>
         <button
-          onClick={() => setActiveFeature('reduce')}
-          className={`flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out ${activeFeature === 'reduce' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg scale-105' : 'bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-teal-500 scale-100'}`}
+          onClick={() => setActiveFeature('generate')}
+          className={`flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out ${activeFeature === 'generate' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg scale-105' : 'bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-amber-500 scale-100'}`}
         >
-          <Scale className="w-5 h-5" />
-          <span className={`${activeFeature === 'reduce' ? 'font-bold' : 'font-medium'}`}>降重</span>
+          <FileText className="w-5 h-5" />
+          <span className={`${activeFeature === 'generate' ? 'font-bold' : 'font-medium'}`}>文章</span>
         </button>
         <button
           onClick={() => setActiveFeature('review')}
@@ -1835,13 +1843,6 @@ export default function Home() {
           <Bot className="w-5 h-5" />
           <span className={`${activeFeature === 'agent' ? 'font-bold' : 'font-medium'}`}>智能体</span>
         </button>
-        <button
-          onClick={() => window.location.href = '/detect'}
-          className="flex-shrink-0 flex flex-col items-center gap-1 py-3 px-3 rounded-2xl text-xs transition-all duration-300 ease-out bg-white text-slate-500 shadow-sm border border-slate-100 hover:border-indigo-200 hover:text-indigo-500 scale-100"
-        >
-          <Sparkles className="w-5 h-5" />
-          <span className="font-medium">AI率</span>
-        </button>
       </div>
 
       <div className="max-w-6xl mx-auto flex gap-6 py-6 px-6">
@@ -1854,6 +1855,16 @@ export default function Home() {
             >
               <Scale className="w-5 h-5" />
               <span className="font-medium">降重降AI</span>
+            </button>
+            <button
+              onClick={() => window.location.href = '/detect'}
+              className="w-full relative px-4 py-3.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all duration-300"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-medium">AI率检测</span>
+              </div>
+              <span className="absolute top-1 right-2 text-[10px] bg-green-100 text-green-600 font-bold px-1.5 py-0.5 rounded-full">免费</span>
             </button>
             <button
               onClick={() => setActiveFeature('translate')}
@@ -1896,13 +1907,6 @@ export default function Home() {
             >
               <Bot className="w-5 h-5" />
               <span className="font-medium">科研智能体</span>
-            </button>
-            <button
-              onClick={() => window.location.href = '/detect'}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all duration-300"
-            >
-              <Sparkles className="w-5 h-5" />
-              <span className="font-medium">AI率检测</span>
             </button>
           </div>
         </aside>
