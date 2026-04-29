@@ -28,7 +28,7 @@ export default function RootLayout({
       {children}
       <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
         <div className="max-w-6xl mx-auto px-6 text-center text-xs text-gray-400">
-          <p>© 2026 Pepper · 智能论文助手 &nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" className="hover:text-indigo-500">京ICP备25009920号</a></p>
+          <p>© 2026 Pepper · 智能论文助手 &nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" className="hover:text-indigo-500">津ICP备2025038688号</a></p>
         </div>
       </footer>
       <Script src="https://cdn.paddle.com/paddle/v2/paddle.js" strategy="lazyOnload" />
