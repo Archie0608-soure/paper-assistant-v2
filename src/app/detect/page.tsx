@@ -146,7 +146,6 @@ export default function DetectPage() {
       text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
       if (!text.trim()) throw new Error('文件内容为空');
       if (text.length < 50) throw new Error('文件内容太少,至少50个字');
-      if (text.length > 100000) throw new Error('文件超过10万字，请将内容拆分成多份分别检测，系统支持最高10万字/次');
       setText(text);
       setUploadedFileName(file.name);
       setPdfUploaded(ext === 'pdf');
@@ -179,7 +178,9 @@ export default function DetectPage() {
   const handleDetect = async () => {
     if (!text.trim()) { setError('请输入要检测的文本'); return; }
     if (text.length < 50) { setError('文本至少需要50个字才能准确检测'); return; }
-    if (text.length > 100000) { setError('文本超过10万字，请将内容拆分成多份分别检测，系统支持最高10万字/次'); return; }
+    if (text.length > 90000) {
+      setError('正在自动分段检测，请稍候...（超大文本可能需要较长时间）');
+    }
     setLoading(true);
     setError('');
     setResult(null);
